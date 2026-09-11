@@ -25,13 +25,13 @@
   --surface:#FFFFFF;
   --border:#E2E8F0;
   --border-soft:#EEF0F4;
+  --text:#0F172A;
+  --muted:#64748B;
+  --faint:#94A3B8;
   --primary:#6366F1;
   --primary-strong:#4F46E5;
   --primary-soft:#EEF2FF;
   --primary-line:#C7D2FE;
-  --text:#0F172A;
-  --muted:#64748B;
-  --faint:#94A3B8;
   --success:#10B981;
   --success-soft:#ECFDF5;
   --success-line:#A7F3D0;
@@ -45,16 +45,18 @@
   --font:'Inter',-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
 }
 *{box-sizing:border-box;margin:0}
-body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;margin:0;padding:0}
+[hidden]{display:none!important}
 
-/* ============ Top navigation (56px) ============ */
+/* ============ Top navigation (56px, sticky, blur) ============ */
 .topnav{height:56px;position:sticky;top:0;z-index:60;display:flex;align-items:center;gap:16px;padding:0 24px;
   background:rgba(255,255,255,.86);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid var(--border)}
 .nav-brand{display:flex;align-items:center;gap:10px;margin-right:auto;min-width:0}
 .nav-brand svg{flex-shrink:0}
-.nav-title{display:flex;flex-direction:column;line-height:1.2;min-width:0}
+.nav-title{display:flex;flex-direction:column;align-items:flex-start;line-height:1.2;min-width:0}
 .nav-logo{font-size:15px;font-weight:700;letter-spacing:-0.3px;color:var(--text)}
-.nav-sub{font-size:10px;font-weight:600;color:var(--faint);letter-spacing:.6px;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nav-tag{font-size:9.5px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--primary);
+  background:var(--primary-soft);border:1px solid var(--primary-line);border-radius:999px;padding:2px 9px;margin-top:3px;white-space:nowrap}
 .nav-stats{display:flex;align-items:center;gap:6px;flex-wrap:nowrap}
 .nav-chip{display:inline-flex;align-items:center;gap:5px;background:var(--surface);border:1px solid var(--border);
   border-radius:999px;padding:4px 10px;font-size:11px;color:var(--muted);font-weight:500;white-space:nowrap}
@@ -66,32 +68,33 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;font-
 .comp-fill{height:100%;width:0%;border-radius:999px;background:var(--primary);transition:width .3s linear}
 .streak{font-size:11.5px;font-weight:600;color:#3730A3;background:var(--primary-soft);
   border:1px solid var(--primary-line);border-radius:999px;padding:4px 12px;white-space:nowrap}
-@media(max-width:900px){.nav-sub{display:none}}
+
+/* ============ Hidden UI (present in DOM, display:none) ============ */
+.game-card{display:none}
+.tabbar{display:none}
 
 /* ============ App shell ============ */
 .wrap{max-width:1200px;margin:0 auto;padding:24px 28px 64px}
 .layout{display:grid;grid-template-columns:320px minmax(0,1fr);gap:22px;align-items:start}
 @media(max-width:1000px){.layout{grid-template-columns:1fr}}
 
-/* ============ Left sidebar (fixed 320px) ============ */
+/* ============ Left sidebar (fixed 320px, sticky) ============ */
 .sidebar{width:320px;position:sticky;top:80px;max-height:calc(100vh - 96px);overflow:auto;
   display:flex;flex-direction:column;gap:14px;padding-bottom:8px;overscroll-behavior:contain}
 .sidebar::-webkit-scrollbar{width:6px}
 .sidebar::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+@media(max-width:1000px){.sidebar{width:100%;position:static;max-height:none;overflow:visible}}
 
 /* ============ Main panel (fluid) ============ */
 .main{display:flex;flex-direction:column;gap:16px;min-width:0}
 
 /* ============ Cards ============ */
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:none}
+.card-head{display:flex;align-items:center;gap:9px;margin-bottom:12px}
+.card-head h2{margin:0;font-size:13px;font-weight:700;letter-spacing:-0.1px}
+.card-head span.t{color:var(--faint);font-weight:500;font-size:11px;margin-left:2px}
 
-/* ============ Wizard ============ */
-.step-head{display:flex;align-items:center;gap:9px;margin-bottom:12px}
-.step-num{width:22px;height:22px;flex:none;border-radius:6px;background:var(--primary-soft);color:var(--primary);
-  display:grid;place-items:center;font-weight:700;font-size:11px}
-.step-head h2{margin:0;font-size:13px;font-weight:600;letter-spacing:-0.1px}
-.step-head span.t{color:var(--faint);font-weight:500;font-size:11px;margin-left:2px}
-
+/* ============ Wizard: subjects ============ */
 .subj{border-top:1px solid var(--border-soft);padding:11px 0 4px}
 .subj:first-of-type{border-top:none;padding-top:0}
 .subj h3{margin:0 0 7px;font-size:11px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;color:var(--faint);display:flex;align-items:center;gap:6px}
@@ -123,7 +126,12 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;font-
 .sel-empty{color:var(--faint);font-size:12.5px;font-style:italic}
 .sub{padding:5px 0 0;display:flex;align-items:center;gap:8px;color:var(--muted);font-size:11.5px;flex-wrap:wrap}
 
-.win{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px}
+/* ============ Wizard: plan settings ============ */
+.settings-group{margin-top:14px}
+.settings-group:first-of-type{margin-top:0}
+.settings-label{font-size:10.5px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--faint);margin-bottom:8px}
+.settings-label small{color:var(--faint);font-weight:500;letter-spacing:0;text-transform:none}
+.win{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}
 .win label{font-size:11.5px;color:var(--muted);font-weight:500}
 .win input[type=time]{border:1px solid var(--border);border-radius:8px;padding:6px 9px;
   font:600 12.5px var(--font);color:var(--text);background:transparent;transition:border-color .12s ease}
@@ -151,16 +159,7 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;font-
 #msg.err{color:var(--danger);font-weight:600}
 #msg.ok{color:var(--success)}
 
-/* ============ Tab bar ============ */
-.tabbar{display:flex;gap:4px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:4px;box-shadow:none}
-.tab{flex:1;border:0;background:transparent;border-radius:8px;padding:8px 0;
-  font-weight:600;font-size:12.5px;cursor:pointer;color:var(--faint);transition:all .12s ease;font-family:var(--font)}
-.tab:hover{color:var(--primary)}
-.tab.active{background:var(--primary);color:#fff}
-
-/* ============ Game card ============ */
-.game-card{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--surface);
-  border:1px solid var(--border);border-radius:var(--radius);padding:12px 16px;box-shadow:none;font-size:12px}
+/* ============ Game card (hidden — kept for JS) ============ */
 .gc-base{display:flex;align-items:center;gap:6px;flex-shrink:0}
 .gc-base.damaged .gc-icon{opacity:.4;filter:grayscale(.6)}
 .gc-icon{font-size:15px}
@@ -310,7 +309,7 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;font-
 
 /* ============ Compact inline badge banners ============ */
 .catchup-bar{display:none;align-items:center;gap:8px;background:var(--danger-soft);
-  color:#991B1B;border:1px solid var(--danger-line);border-radius:999px;padding:5px 12px;margin:0 0 10px;font-size:12px;width:fit-content;max-width:100%}
+  color:#991B1B;border:1px solid var(--danger-line);border-radius:999px;padding:5px 12px;margin:0;font-size:12px;width:fit-content;max-width:100%}
 .catchup-bar.show{display:inline-flex}
 .catchup-bar .cb-icon{width:7px;height:7px;border-radius:50%;background:var(--danger);flex-shrink:0;font-size:0}
 .catchup-bar .cb-text{font-weight:600;line-height:1.4;overflow:hidden;text-overflow:ellipsis}
@@ -318,19 +317,19 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;font-
   padding:3px 12px;font-weight:700;cursor:pointer;font-size:11px;white-space:nowrap;transition:all .12s ease;font-family:var(--font);flex-shrink:0}
 .catchup-bar .cb-btn:hover{background:var(--danger-soft);border-color:var(--danger)}
 
-.review-banner{display:none;align-items:center;gap:8px;background:var(--primary-soft);border:1px solid var(--primary-line);border-radius:999px;padding:5px 12px;margin-bottom:10px;font-size:12px;width:fit-content;max-width:100%}
+.review-banner{display:none;align-items:center;gap:8px;background:var(--primary-soft);border:1px solid var(--primary-line);border-radius:999px;padding:5px 12px;margin:0;font-size:12px;width:fit-content;max-width:100%}
 .review-banner.show{display:inline-flex}
 .review-banner .rb-icon{width:7px;height:7px;border-radius:50%;background:var(--primary);flex-shrink:0;font-size:0}
 .review-banner .rb-text{flex:1;color:#3730A3;font-weight:600;overflow:hidden;text-overflow:ellipsis}
 .review-banner .rb-add{background:var(--primary);color:#fff;border:0;border-radius:999px;padding:3px 12px;font-weight:700;cursor:pointer;font-size:11px;white-space:nowrap;transition:all .12s ease;font-family:var(--font);flex-shrink:0}
 .review-banner .rb-add:hover{background:var(--primary-strong)}
 
-.fit-banner{margin:0 0 10px;padding:5px 12px;border-radius:999px;background:var(--warning-soft);border:1px solid var(--warning-line);color:#92400E;font-size:12px;font-weight:600;line-height:1.4;display:inline-flex;align-items:center;gap:7px;width:fit-content;max-width:100%}
+.fit-banner{margin:0;padding:5px 12px;border-radius:999px;background:var(--warning-soft);border:1px solid var(--warning-line);color:#92400E;font-size:12px;font-weight:600;line-height:1.4;display:inline-flex;align-items:center;gap:7px;width:fit-content;max-width:100%}
 .fit-banner::before{content:'';width:7px;height:7px;border-radius:50%;background:var(--warning);flex-shrink:0}
 
 /* School-day strip */
 .school-strip{display:none;align-items:center;gap:8px;flex-wrap:wrap;background:var(--surface);
-  border:1px solid var(--border);border-radius:999px;padding:6px 12px;margin:0 0 12px;font-size:12px;width:fit-content;max-width:100%}
+  border:1px solid var(--border);border-radius:999px;padding:6px 12px;margin:0;font-size:12px;width:fit-content;max-width:100%}
 .school-strip.show{display:inline-flex}
 .ss-badge{font-weight:700;font-size:10.5px;letter-spacing:.5px;flex-shrink:0;color:var(--primary);
   background:var(--primary-soft);border:1px solid var(--primary-line);border-radius:999px;padding:2px 9px}
@@ -339,7 +338,7 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;font-
 .ss-meta{color:var(--muted);font-weight:500}
 .ss-note{color:var(--faint);font-weight:500}
 
-/* ============ Analytics ============ */
+/* ============ Analytics (hidden by default) ============ */
 .stats-panel{display:none;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px 22px;box-shadow:none}
 .stats-panel.show{display:block;animation:fadeIn .25s ease}
 @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
@@ -419,6 +418,7 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;font-
 .zen-btn-ghost:hover{border-color:rgba(255,255,255,.35);color:#fff}
 .zen-btn-danger{background:var(--danger);border:0;color:#fff;border-radius:999px;padding:10px 24px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:var(--font);transition:all .12s ease}
 .zen-btn-danger:hover{background:#DC2626}
+
 </style>
 </head>
 <body>
@@ -435,14 +435,14 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;font-
     </svg>
     <div class="nav-title">
       <span class="nav-logo">Oztudy</span>
-      <span class="nav-sub">Academic Strategy · IB MYP 9</span>
+      <span class="nav-tag">9-A IB MYP</span>
     </div>
   </div>
   <div class="nav-stats">
     <div class="nav-chip" title="Odak Süresi"><b id="st-total">0</b> dk Odak</div>
-    <div class="nav-chip" title="Tamamlanan"><b id="st-done">0</b> dk</div>
-    <div class="nav-chip" title="Blok"><b id="st-count">0</b> Blok</div>
-    <div class="nav-progress" title="İlerleme">
+    <div class="nav-chip" title="Tamamlanan" style="display:none"><b id="st-done">0</b> dk</div>
+    <div class="nav-chip" title="Blok" style="display:none"><b id="st-count">0</b> Blok</div>
+    <div class="nav-progress" title="İlerleme" style="display:none">
       <div class="comp-track"><div class="comp-fill" id="st-fill"></div></div>
       <b id="st-pct">0%</b>
     </div>
@@ -451,12 +451,12 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;font-
 </header>
 
 <div class="wrap">
-
   <div class="layout">
 
-    <!-- ============ Left sidebar: wizard (fixed 320px) ============ -->
+    <!-- ============ Left sidebar (fixed 320px) ============ -->
     <aside class="sidebar">
 
+      <!-- Game card: present in DOM, hidden -->
       <div class="game-card" id="game-card">
         <div class="gc-base" id="gc-base">
           <span class="gc-icon">🏗</span>
@@ -470,16 +470,16 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;font-
         <div class="gc-badges" id="gc-badges"></div>
       </div>
 
+      <!-- Tab bar: present in DOM, hidden -->
       <div class="tabbar">
         <button type="button" class="tab active" id="tab-wiz">🧙 Oluştur</button>
         <button type="button" class="tab" id="tab-stat">📊 İstatistikler</button>
       </div>
 
+      <!-- 1. Subjects card -->
       <section class="card">
-        <div class="step-head">
-          <div class="step-num">1</div>
+        <div class="card-head">
           <h2>Dersler &amp; Konular</h2>
-          <span class="t">tıkla &amp; seç</span>
         </div>
 
         <div class="subj b-math">
@@ -525,51 +525,47 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;font-
           <button type="button" id="sel-clear" class="btn-sm">Temizle</button></div>
       </section>
 
+      <!-- 2. Plan Settings card (compact) -->
       <section class="card">
-        <div class="step-head">
-          <div class="step-num">2</div>
-          <h2>Süre &amp; Saat</h2>
-          <span class="t">odak + pencere</span>
+        <div class="card-head">
+          <h2>Plan Ayarları</h2>
         </div>
-        <div class="pills" id="dur-pills">
-          <button type="button" class="pill active" data-dur="2">2 Saat</button>
-          <button type="button" class="pill" data-dur="3">3 Saat</button>
-          <button type="button" class="pill" data-dur="4">4 Saat</button>
-          <button type="button" class="pill" data-dur="5">5 Saat</button>
+
+        <div class="settings-group">
+          <div class="settings-label">Odak Pencere</div>
+          <div class="pills" id="dur-pills">
+            <button type="button" class="pill active" data-dur="2">2 Saat</button>
+            <button type="button" class="pill" data-dur="3">3 Saat</button>
+            <button type="button" class="pill" data-dur="4">4 Saat</button>
+            <button type="button" class="pill" data-dur="5">5 Saat</button>
+          </div>
+          <div class="win">
+            <label>Başlangıç <input type="time" id="win-s" value="17:00"></label>
+            <label>Bitiş <input type="time" id="win-e" value="19:00"></label>
+            <span class="t">(varsayılan 17:00 - 19:00)</span>
+          </div>
         </div>
-        <div class="win">
-          <label>Başlangıç <input type="time" id="win-s" value="17:00"></label>
-          <label>Bitiş <input type="time" id="win-e" value="19:00"></label>
-          <span class="t">(varsayılan 17:00 - 19:00)</span>
+
+        <div class="settings-group">
+          <div class="settings-label">Mod</div>
+          <div class="pills" id="mode-pills">
+            <button type="button" class="pill" data-mode="exam">Criterion A/D Exam Prep</button>
+            <button type="button" class="pill active" data-mode="practice">Soru Çözümü / Practice</button>
+            <button type="button" class="pill" data-mode="recall">Active Recall / Review</button>
+          </div>
+        </div>
+
+        <div class="settings-group">
+          <div class="settings-label">IB Criterion Ödak</div>
+          <div class="pills" id="cri-pills">
+            <button type="button" class="pill active" data-cri="A">Criterion A: Knowing and Understanding</button>
+            <button type="button" class="pill" data-cri="BC">Criterion B/C: Investigating &amp; Communicating</button>
+            <button type="button" class="pill" data-cri="D">Criterion D: Applying Mathematics/Science in Real-World Contexts</button>
+          </div>
         </div>
       </section>
 
-      <section class="card">
-        <div class="step-head">
-          <div class="step-num">3</div>
-          <h2>Mod</h2>
-          <span class="t">çalışma biçimi</span>
-        </div>
-        <div class="pills" id="mode-pills">
-          <button type="button" class="pill" data-mode="exam">Criterion A/D Exam Prep</button>
-          <button type="button" class="pill active" data-mode="practice">Soru Çözümü / Practice</button>
-          <button type="button" class="pill" data-mode="recall">Active Recall / Review</button>
-        </div>
-      </section>
-
-      <section class="card">
-        <div class="step-head">
-          <div class="step-num">4</div>
-          <h2>IB Criterion Odak</h2>
-          <span class="t">hedef kriter</span>
-        </div>
-        <div class="pills" id="cri-pills">
-          <button type="button" class="pill active" data-cri="A">Criterion A: Knowing and Understanding</button>
-          <button type="button" class="pill" data-cri="BC">Criterion B/C: Investigating &amp; Communicating</button>
-          <button type="button" class="pill" data-cri="D">Criterion D: Applying Mathematics/Science in Real-World Contexts</button>
-        </div>
-      </section>
-
+      <!-- 3. Actions -->
       <div class="actions">
         <div class="btn-group">
           <button type="button" class="btn btn-go" id="go" disabled>🚀 Planı Oluştur</button>
@@ -580,9 +576,31 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;font-
 
     </aside>
 
-    <!-- ============ Main panel: Master Timeline ============ -->
+    <!-- ============ Main panel ============ -->
     <main class="main">
 
+      <!-- School-day strip -->
+      <div class="school-strip" id="school-strip" hidden>
+        <span class="ss-badge" id="ss-badge"></span>
+        <span class="ss-subjects" id="ss-subjects"></span>
+        <span class="ss-meta" id="ss-meta"></span>
+        <span class="ss-note" id="ss-note"></span>
+      </div>
+
+      <!-- Banners -->
+      <div class="catchup-bar" id="catchup-bar">
+        <span class="cb-icon">●</span>
+        <span class="cb-text" id="cb-text"></span>
+        <button type="button" class="cb-btn" id="cb-btn">Catch-Up Modu</button>
+      </div>
+      <div class="review-banner" id="review-banner">
+        <span class="rb-icon">●</span>
+        <span class="rb-text" id="rb-text"></span>
+        <button type="button" class="rb-add" id="rb-add">+ Ekle</button>
+      </div>
+      <div class="fit-banner" id="fit-banner" hidden></div>
+
+      <!-- Master Timeline -->
       <div class="tl-col">
         <div class="tl-tools">
           <button type="button" id="shift15">+15 Dk Bütün Günü Kaydır</button>
@@ -592,28 +610,12 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;font-
           <h2>Master Timeline</h2>
           <div class="tl-note" id="tl-note">🔴60 · 🟡45 · 🟢30 dk bloklar · 10 dk mola.</div>
         </div>
-        <div class="catchup-bar" id="catchup-bar">
-          <span class="cb-icon">●</span>
-          <span class="cb-text" id="cb-text"></span>
-          <button type="button" class="cb-btn" id="cb-btn">Catch-Up Modu</button>
-        </div>
-        <div class="review-banner" id="review-banner">
-          <span class="rb-icon">●</span>
-          <span class="rb-text" id="rb-text"></span>
-          <button type="button" class="rb-add" id="rb-add">+ Ekle</button>
-        </div>
-        <div class="fit-banner" id="fit-banner" hidden></div>
-        <div class="school-strip" id="school-strip" hidden>
-          <span class="ss-badge" id="ss-badge"></span>
-          <span class="ss-subjects" id="ss-subjects"></span>
-          <span class="ss-meta" id="ss-meta"></span>
-          <span class="ss-note" id="ss-note"></span>
-        </div>
         <div class="timeline" id="timeline">
           <div class="empty"><b>Henüz plan yok</b>Soldan konuları seç ve "🚀 Planı Oluştur".</div>
         </div>
       </div>
 
+      <!-- Weak topics -->
       <section class="card">
         <div class="weak-head">
           <h2>🔴 Unforgetting · Zayıf Konular</h2>
@@ -623,6 +625,7 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;font-
         <div id="weak-list"></div>
       </section>
 
+      <!-- Analytics panel (hidden by default) -->
       <div class="stats-panel" id="analytics-panel" hidden>
         <div class="stats-panel-head">
           <h2>📊 İstatistikler</h2>
@@ -2102,4 +2105,5 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;font-
 </script>
 
 </body>
+
 </html>
