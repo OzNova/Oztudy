@@ -74,6 +74,12 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
 .comp-fill{height:100%;width:0%;border-radius:999px;background:var(--primary);transition:width .3s linear}
 .streak{font-size:11.5px;font-weight:600;color:#3730A3;background:var(--primary-soft);
   border:1px solid var(--primary-line);border-radius:999px;padding:4px 12px;white-space:nowrap}
+.nav-stat-btn{display:inline-flex;align-items:center;gap:5px;font:600 11px var(--font);letter-spacing:-0.1px;
+  color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:999px;
+  padding:5px 12px;cursor:pointer;white-space:nowrap;transition:all .15s ease}
+.nav-stat-btn:hover{border-color:var(--primary);color:var(--primary);background:var(--primary-soft);
+  box-shadow:0 1px 3px rgba(99,102,241,.15)}
+.nav-stat-btn:active{transform:scale(.97)}
 
 /* ============ Hidden UI (present in DOM, display:none) ============ */
 .game-card{display:none}
@@ -483,6 +489,7 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
       <div class="comp-track"><div class="comp-fill" id="st-fill"></div></div>
       <b id="st-pct">0%</b>
     </div>
+    <button type="button" class="nav-stat-btn" id="tab-stat">📊 İstatistikler</button>
     <span class="streak" id="streak">🔥 0 Günlük Seri</span>
   </div>
 </header>
@@ -510,7 +517,6 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
       <!-- Tab bar: present in DOM, hidden -->
       <div class="tabbar">
         <button type="button" class="tab active" id="tab-wiz">🧙 Oluştur</button>
-        <button type="button" class="tab" id="tab-stat">📊 İstatistikler</button>
       </div>
 
       <!-- 1. Subjects card -->
