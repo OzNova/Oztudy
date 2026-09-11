@@ -404,6 +404,27 @@ def _period_table(weekday):
     ]
 
 
+def _school_digest(day_key):
+    d = datetime.strptime(day_key, "%Y-%m-%d")
+    status, label = _day_status(day_key)
+    subjects, _, _ = _subjects_for_day(day_key)
+    next_key = _next_school_day(day_key)
+    next_subjects = _subjects_for_day(next_key)[0]
+    return {
+        "academic_year": ACADEMIC_YEAR,
+        "date": day_key,
+        "day": _weekday_short(day_key),
+        "status": status,
+        "status_label": label,
+        "school_day": status == "school",
+        "school_window": f"{_hhmm(SCHOOL_START)}-{_hhmm(SCHOOL_END)}",
+        "lunch": f"{_hhmm(LUNCH[0])}-{_hhmm(LUNCH[1])}",
+        "subjects_today": subjects,
+        "subjects_next_day": next_subjects,
+        "periods": _period_table(d.weekday()),
+    }
+
+
 def _add_missed(doc, item):
     missed = doc.setdefault("missed", [])
     for m in missed:
@@ -698,18 +719,8 @@ def build_plan(topics, start, end, duration_h, mode, criterion):
             "mode": MODE_LABELS.get(mode, mode),
             "criterion": CRITERIA[criterion],
             "school": {
-                "academic_year": ACADEMIC_YEAR,
-                "date": today_key,
-                "day": _weekday_short(today_key),
-                "status": day_status,
-                "status_label": day_label,
-                "school_day": day_status == "school",
-                "school_window": f"{_hhmm(SCHOOL_START)}-{_hhmm(SCHOOL_END)}",
-                "lunch": f"{_hhmm(LUNCH[0])}-{_hhmm(LUNCH[1])}",
                 "clamped_to_after_school": school_clamped,
-                "subjects_today": today_subjects,
-                "subjects_next_day": tomorrow_subjects,
-                "periods": _period_table(datetime.strptime(today_key, "%Y-%m-%d").weekday()),
+                **_school_digest(today_key),
             },
             "fit": {
                 "scaled": scaled,
@@ -738,6 +749,11 @@ def index():
 @app.get("/api/plan")
 def get_plan():
     return jsonify({"status": "success", "plan": _load_plan()})
+
+
+@app.get("/api/school")
+def school():
+    return jsonify({"status": "success", "school": _school_digest(_day_key(int(time.time())))})
 
 
 @app.post("/api/plan")

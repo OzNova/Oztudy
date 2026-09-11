@@ -328,6 +328,17 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;font-
 .fit-banner{margin:0 0 10px;padding:5px 12px;border-radius:999px;background:var(--warning-soft);border:1px solid var(--warning-line);color:#92400E;font-size:12px;font-weight:600;line-height:1.4;display:inline-flex;align-items:center;gap:7px;width:fit-content;max-width:100%}
 .fit-banner::before{content:'';width:7px;height:7px;border-radius:50%;background:var(--warning);flex-shrink:0}
 
+/* School-day strip */
+.school-strip{display:none;align-items:center;gap:8px;flex-wrap:wrap;background:var(--surface);
+  border:1px solid var(--border);border-radius:999px;padding:6px 12px;margin:0 0 12px;font-size:12px;width:fit-content;max-width:100%}
+.school-strip.show{display:inline-flex}
+.ss-badge{font-weight:700;font-size:10.5px;letter-spacing:.5px;flex-shrink:0;color:var(--primary);
+  background:var(--primary-soft);border:1px solid var(--primary-line);border-radius:999px;padding:2px 9px}
+.school-strip.off .ss-badge{color:#065F46;background:var(--success-soft);border-color:var(--success-line)}
+.ss-subjects{font-weight:600;color:var(--text);letter-spacing:-0.1px}
+.ss-meta{color:var(--muted);font-weight:500}
+.ss-note{color:var(--faint);font-weight:500}
+
 /* ============ Analytics ============ */
 .stats-panel{display:none;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px 22px;box-shadow:none}
 .stats-panel.show{display:block;animation:fadeIn .25s ease}
@@ -592,6 +603,12 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;font-
           <button type="button" class="rb-add" id="rb-add">+ Ekle</button>
         </div>
         <div class="fit-banner" id="fit-banner" hidden></div>
+        <div class="school-strip" id="school-strip" hidden>
+          <span class="ss-badge" id="ss-badge"></span>
+          <span class="ss-subjects" id="ss-subjects"></span>
+          <span class="ss-meta" id="ss-meta"></span>
+          <span class="ss-note" id="ss-note"></span>
+        </div>
         <div class="timeline" id="timeline">
           <div class="empty"><b>Henüz plan yok</b>Soldan konuları seç ve "🚀 Planı Oluştur".</div>
         </div>
@@ -802,6 +819,29 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;font-
     if (!spaceNodes) return;
     spaceNodes.oscs.forEach(function(o){ try { o.stop(); } catch(e){} });
     spaceNodes.master.disconnect(); spaceNodes = null;
+  }
+
+  function fetchSchool(){
+    fetch("/api/school").then(function(r){ return r.json(); }).then(function(d){
+      if (d.status === "success") renderSchool(d.school);
+    }).catch(function(){});
+  }
+  function renderSchool(s){
+    var ss = $("school-strip");
+    if (!ss){ return; }
+    if (!s || !s.date){ ss.className = "school-strip"; ss.hidden = true; return; }
+    ss.className = "school-strip show" + (s.status === "school" ? "" : " off");
+    ss.hidden = false;
+    $("ss-badge").textContent = s.status === "school" ? "🏫 DERS GÜNÜ" : "🌤 SERBEST";
+    if (s.status === "school"){
+      $("ss-subjects").textContent = "Bugün: " + (s.subjects_today || []).join(" · ");
+      $("ss-meta").textContent = s.day + " · okul " + s.school_window + " · öğle " + s.lunch + " · çalışma sonrası";
+      $("ss-note").textContent = "yarın: " + (s.subjects_next_day || []).join(" · ");
+    } else {
+      $("ss-subjects").textContent = (s.status_label || "Serbest gün");
+      $("ss-meta").textContent = s.day + " · tüm gün serbest";
+      $("ss-note").textContent = "";
+    }
   }
 
   function fetchGame(){
@@ -1372,6 +1412,7 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;font-
       return;
     }
     $("tl-note").textContent = plan.meta.note;
+    if (plan.meta && plan.meta.school) renderSchool(plan.meta.school);
     renderAnchorId = null;
     var runningNow = plan.blocks.filter(function(b){ return b.type === "study" && b.active; });
     if (runningNow.length){
@@ -2055,6 +2096,7 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;font-
   fetchReviews();
   fetchOverdue();
   fetchGame();
+  fetchSchool();
   rebuildChips();
 })();
 </script>
