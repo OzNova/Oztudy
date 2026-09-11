@@ -86,12 +86,12 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
 .tabbar{display:none}
 
 /* ============ App shell ============ */
-.wrap{max-width:1200px;margin:0 auto;padding:24px 28px 64px}
-.layout{display:grid;grid-template-columns:320px minmax(0,1fr);gap:22px;align-items:start}
+.wrap{max-width:1760px;margin:0 auto;padding:24px 36px 64px}
+.layout{display:grid;grid-template-columns:340px minmax(0,1fr);gap:26px;align-items:start}
 @media(max-width:1000px){.layout{grid-template-columns:1fr}}
 
 /* ============ Left sidebar (fixed 320px, sticky) ============ */
-.sidebar{width:320px;position:sticky;top:80px;max-height:calc(100vh - 96px);overflow:auto;
+.sidebar{width:340px;position:sticky;top:80px;max-height:calc(100vh - 96px);overflow:auto;
   display:flex;flex-direction:column;gap:14px;padding-bottom:8px;overscroll-behavior:contain}
 .sidebar::-webkit-scrollbar{width:6px}
 .sidebar::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
