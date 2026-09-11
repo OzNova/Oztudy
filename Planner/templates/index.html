@@ -45,7 +45,13 @@
   --font:'Inter',-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
 }
 *{box-sizing:border-box;margin:0}
-body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;margin:0;padding:0}
+body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;margin:0;padding:0;
+  background-image:
+    radial-gradient(1000px 420px at 12% -8%,rgba(99,102,241,.10),transparent 62%),
+    radial-gradient(900px 400px at 96% -8%,rgba(139,92,246,.08),transparent 60%),
+    radial-gradient(1200px 520px at 50% 115%,rgba(14,165,233,.05),transparent 60%);
+  background-repeat:no-repeat}
+::selection{background:var(--primary-line);color:var(--primary-strong)}
 [hidden]{display:none!important}
 
 /* ============ Top navigation (56px, sticky, blur) ============ */
@@ -89,25 +95,44 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
 .main{display:flex;flex-direction:column;gap:16px;min-width:0}
 
 /* ============ Cards ============ */
-.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:none}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px 18px;
+  box-shadow:0 1px 2px rgba(15,23,42,.04),0 4px 14px rgba(15,23,42,.03)}
 .card-head{display:flex;align-items:center;gap:9px;margin-bottom:12px}
 .card-head h2{margin:0;font-size:13px;font-weight:700;letter-spacing:-0.1px}
 .card-head span.t{color:var(--faint);font-weight:500;font-size:11px;margin-left:2px}
 
 /* ============ Wizard: subjects ============ */
-.subj{border-top:1px solid var(--border-soft);padding:11px 0 4px}
-.subj:first-of-type{border-top:none;padding-top:0}
+.cat-label{display:flex;align-items:center;gap:9px;margin:15px 0 3px;padding-top:11px;border-top:1px solid var(--border-soft);
+  font-size:9.5px;font-weight:700;letter-spacing:1.1px;text-transform:uppercase;color:var(--faint)}
+.cat-label::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,var(--border),transparent)}
+.cat-label:first-child{margin-top:0;padding-top:0;border-top:none}
+.subj{padding:11px 0 4px}
+.subj:first-of-type{padding-top:0}
 .subj h3{margin:0 0 7px;font-size:11px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;color:var(--faint);display:flex;align-items:center;gap:6px}
-.subj h3 i{font-style:normal;width:7px;height:7px;border-radius:50%;display:inline-block}
-.b-math h3 i{background:var(--primary)} .b-phys h3 i{background:#F87171}
-.b-chem h3 i{background:#34D399} .b-bio h3 i{background:#A78BFA}
+.subj h3 i{font-style:normal;width:7px;height:7px;border-radius:50%;display:inline-block;box-shadow:0 0 0 3px rgba(15,23,42,.05)}
+.b-math h3 i{background:var(--primary)}
+.b-phys h3 i{background:#F87171}
+.b-chem h3 i{background:#34D399}
+.b-bio h3 i{background:#A78BFA}
+.b-dt h3 i{background:#8B5CF6}
+.b-eng h3 i{background:#0EA5E9}
+.b-tur h3 i{background:#F43F5E}
+.b-ger h3 i{background:#F59E0B}
+.b-ecl h3 i{background:#06B6D4}
+.b-his h3 i{background:#D97706}
+.b-geo h3 i{background:#14B8A6}
+.b-re h3 i{background:#64748B}
+.b-art h3 i{background:#EC4899}
+.b-pe h3 i{background:#22C55E}
 
 .pills{display:flex;flex-wrap:wrap;gap:6px}
 .pill{border:1px solid var(--border);background:var(--surface);color:var(--muted);
   border-radius:8px;padding:6px 11px;font-size:12px;font-weight:500;cursor:pointer;
-  transition:all .15s ease;font-family:var(--font);letter-spacing:-0.1px}
-.pill:hover{border-color:var(--primary);color:var(--primary);background:var(--primary-soft)}
-.pill.active{border-color:var(--primary);background:var(--primary-soft);color:var(--primary);font-weight:600}
+  transition:border-color .15s ease,background .15s ease,color .15s ease,transform .12s ease;font-family:var(--font);letter-spacing:-0.1px}
+.pill:hover{border-color:var(--primary-line);color:var(--primary);background:var(--primary-soft);transform:translateY(-1px)}
+.pill:active{transform:translateY(0)}
+.pill.active{border-color:var(--primary);background:var(--primary-soft);color:var(--primary);font-weight:600;
+  box-shadow:0 0 0 3px rgba(99,102,241,.08)}
 
 .sel{margin-top:10px;display:flex;align-items:flex-start;gap:7px;flex-wrap:wrap}
 .badge{display:inline-flex;flex-direction:column;gap:4px;background:var(--surface);color:var(--text);
@@ -140,14 +165,17 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
 
 /* ============ Buttons ============ */
 .actions{margin-top:4px}
-.btn{border-radius:8px;border:0;cursor:pointer;font-weight:600;font-size:13px;
+.btn{display:inline-flex;align-items:center;justify-content:center;border-radius:9px;border:0;cursor:pointer;font-weight:600;font-size:13px;
   padding:10px 16px;transition:all .15s ease;font-family:var(--font);letter-spacing:-0.1px}
 .btn-group{display:flex;gap:8px;flex-wrap:wrap}
 .btn-group .btn-go{flex:1 1 180px;min-width:0}
 .btn-group .btn-ghost{flex:0 0 auto;white-space:nowrap}
-.btn-go{background:var(--primary);color:#fff}
-.btn-go:hover{background:var(--primary-strong)}
-.btn-go:disabled{background:var(--border-soft);color:var(--faint);cursor:not-allowed}
+.btn-go{background:linear-gradient(135deg,#6366F1,#4F46E5);color:#fff;
+  box-shadow:0 1px 2px rgba(79,70,229,.35),0 4px 12px rgba(99,102,241,.22)}
+.btn-go:hover{background:linear-gradient(135deg,#4F46E5,#4338CA);transform:translateY(-1px);
+  box-shadow:0 2px 4px rgba(79,70,229,.42),0 8px 18px rgba(99,102,241,.28)}
+.btn-go:active{transform:translateY(0)}
+.btn-go:disabled{background:linear-gradient(135deg,#E2E8F0,#CBD5E1);color:var(--faint);box-shadow:none;cursor:not-allowed;transform:none}
 .btn-ghost{background:transparent;border:1px solid var(--border);color:var(--muted)}
 .btn-ghost:hover{border-color:var(--faint);color:var(--text);background:var(--surface)}
 .btn-sm{border-radius:8px;border:1px solid var(--border);background:var(--surface);cursor:pointer;
@@ -176,10 +204,14 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
 .gc-badge.lab{background:var(--primary-soft);border-color:var(--primary-line);color:var(--primary)}
 
 /* ============ Master Timeline (hero) ============ */
-.tl-col{background:var(--surface);border:1px solid var(--border);border-radius:12px;
-  padding:18px 20px 22px;box-shadow:none;position:relative}
+.tl-col{background:var(--surface);border:1px solid var(--border);border-radius:14px;
+  padding:18px 20px 22px;position:relative;overflow:hidden;
+  box-shadow:0 1px 2px rgba(15,23,42,.04),0 6px 18px rgba(15,23,42,.04)}
+.tl-col::before{content:'';position:absolute;left:0;right:0;top:0;height:3px;
+  background:linear-gradient(90deg,#6366F1,#A5B4FC,#34D399);opacity:.85}
 .tl-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding-bottom:12px;border-bottom:1px solid var(--border-soft);margin-bottom:12px}
-.tl-head h2{margin:0;font-size:15px;font-weight:700;letter-spacing:-0.2px}
+.tl-head h2{margin:0;font-size:15px;font-weight:700;letter-spacing:-0.2px;
+  background:linear-gradient(90deg,var(--text),var(--primary));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
 .tl-note{color:var(--muted);font-size:11.5px;max-width:460px}
 .tl-tools{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
 .tl-tools button{border:1px solid var(--border);background:var(--surface);color:var(--muted);border-radius:8px;
@@ -189,10 +221,13 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
 
 /* Minimal 2px vertical guide track */
 .timeline{display:flex;flex-direction:column;gap:10px;position:relative;padding-left:26px}
-.timeline::before{content:'';position:absolute;left:8px;top:8px;bottom:8px;width:2px;background:var(--border);border-radius:1px}
+.timeline::before{content:'';position:absolute;left:8px;top:8px;bottom:8px;width:2px;
+  background:linear-gradient(180deg,#C7D2FE,#E2E8F0,#A7F3D0);border-radius:1px}
 
 .pblock{border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);
   padding:13px 15px;transition:all .2s ease;position:relative;box-shadow:none}
+.pblock:not(.done):not(.running):not(.break):hover{border-color:var(--primary-line);
+  box-shadow:0 2px 10px rgba(15,23,42,.06),0 0 0 1px rgba(99,102,241,.06)}
 .pblock::before{content:'';position:absolute;left:-22px;top:20px;width:8px;height:8px;
   border-radius:50%;background:var(--surface);border:2px solid var(--border);z-index:1;transition:all .2s ease}
 .pblock.break{background:var(--bg);border-style:dashed;opacity:.65}
@@ -328,8 +363,10 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
 .fit-banner::before{content:'';width:7px;height:7px;border-radius:50%;background:var(--warning);flex-shrink:0}
 
 /* School-day strip */
-.school-strip{display:none;align-items:center;gap:8px;flex-wrap:wrap;background:var(--surface);
-  border:1px solid var(--border);border-radius:999px;padding:6px 12px;margin:0;font-size:12px;width:fit-content;max-width:100%}
+.school-strip{display:none;align-items:center;gap:8px;flex-wrap:wrap;background:linear-gradient(90deg,#EEF2FF,#F5F3FF);
+  border:1px solid var(--primary-line);border-radius:999px;padding:6px 12px;margin:0;font-size:12px;width:fit-content;max-width:100%;
+  box-shadow:0 1px 2px rgba(99,102,241,.08)}
+.school-strip.off{background:linear-gradient(90deg,#ECFDF5,#F0FDF4);border-color:var(--success-line);box-shadow:0 1px 2px rgba(16,185,129,.08)}
 .school-strip.show{display:inline-flex}
 .ss-badge{font-weight:700;font-size:10.5px;letter-spacing:.5px;flex-shrink:0;color:var(--primary);
   background:var(--primary-soft);border:1px solid var(--primary-line);border-radius:999px;padding:2px 9px}
@@ -482,6 +519,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
           <h2>Dersler &amp; Konular</h2>
         </div>
 
+        <div class="cat-label">Temel Bilimler &amp; Matematik</div>
         <div class="subj b-math">
           <h3><i></i>Math</h3>
           <div class="pills">
@@ -491,7 +529,6 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
             <button type="button" class="pill" data-subject="Math" data-topic="Statistics">Statistics</button>
           </div>
         </div>
-
         <div class="subj b-phys">
           <h3><i></i>Physics</h3>
           <div class="pills">
@@ -501,22 +538,106 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14
             <button type="button" class="pill" data-subject="Physics" data-topic="Waves">Waves</button>
           </div>
         </div>
-
         <div class="subj b-chem">
           <h3><i></i>Chemistry</h3>
           <div class="pills">
             <button type="button" class="pill" data-subject="Chemistry" data-topic="Atomic Structure">Atomic Structure</button>
             <button type="button" class="pill" data-subject="Chemistry" data-topic="Periodic Table">Periodic Table</button>
             <button type="button" class="pill" data-subject="Chemistry" data-topic="Chemical Bonding">Chemical Bonding</button>
+            <button type="button" class="pill" data-subject="Chemistry" data-topic="Acids &amp; Bases">Acids &amp; Bases</button>
           </div>
         </div>
-
         <div class="subj b-bio">
           <h3><i></i>Biology</h3>
           <div class="pills">
             <button type="button" class="pill" data-subject="Biology" data-topic="Cell Biology">Cell Biology</button>
             <button type="button" class="pill" data-subject="Biology" data-topic="Genetics">Genetics</button>
             <button type="button" class="pill" data-subject="Biology" data-topic="Ecology">Ecology</button>
+            <button type="button" class="pill" data-subject="Biology" data-topic="Evolution">Evolution</button>
+          </div>
+        </div>
+        <div class="subj b-dt">
+          <h3><i></i>Design &amp; Tech</h3>
+          <div class="pills">
+            <button type="button" class="pill" data-subject="Design &amp; Technology" data-topic="Design Cycle">Design Cycle</button>
+            <button type="button" class="pill" data-subject="Design &amp; Technology" data-topic="Sketching &amp; Prototyping">Sketching &amp; Prototyping</button>
+            <button type="button" class="pill" data-subject="Design &amp; Technology" data-topic="Materials">Materials</button>
+          </div>
+        </div>
+
+        <div class="cat-label">Diller</div>
+        <div class="subj b-eng">
+          <h3><i></i>English</h3>
+          <div class="pills">
+            <button type="button" class="pill" data-subject="English" data-topic="Literary Analysis">Literary Analysis</button>
+            <button type="button" class="pill" data-subject="English" data-topic="Essay Writing">Essay Writing</button>
+            <button type="button" class="pill" data-subject="English" data-topic="Poetry &amp; Drama">Poetry &amp; Drama</button>
+          </div>
+        </div>
+        <div class="subj b-tur">
+          <h3><i></i>Turkish</h3>
+          <div class="pills">
+            <button type="button" class="pill" data-subject="Turkish" data-topic="Edebiyat İnceleme">Edebiyat İnceleme</button>
+            <button type="button" class="pill" data-subject="Turkish" data-topic="Kompozisyon">Kompozisyon</button>
+            <button type="button" class="pill" data-subject="Turkish" data-topic="Dil Bilgisi">Dil Bilgisi</button>
+          </div>
+        </div>
+        <div class="subj b-ger">
+          <h3><i></i>German</h3>
+          <div class="pills">
+            <button type="button" class="pill" data-subject="German" data-topic="Grundwortschatz">Grundwortschatz</button>
+            <button type="button" class="pill" data-subject="German" data-topic="Grammatik">Grammatik</button>
+            <button type="button" class="pill" data-subject="German" data-topic="Leseverstehen">Leseverstehen</button>
+          </div>
+        </div>
+        <div class="subj b-ecl">
+          <h3><i></i>ECL</h3>
+          <div class="pills">
+            <button type="button" class="pill" data-subject="ECL" data-topic="Speaking Practice">Speaking Practice</button>
+            <button type="button" class="pill" data-subject="ECL" data-topic="Listening &amp; Media">Listening &amp; Media</button>
+          </div>
+        </div>
+
+        <div class="cat-label">Sosyal &amp; Beşeri</div>
+        <div class="subj b-his">
+          <h3><i></i>History</h3>
+          <div class="pills">
+            <button type="button" class="pill" data-subject="History" data-topic="Industrial Revolution">Industrial Revolution</button>
+            <button type="button" class="pill" data-subject="History" data-topic="World Wars">World Wars</button>
+            <button type="button" class="pill" data-subject="History" data-topic="Cold War">Cold War</button>
+          </div>
+        </div>
+        <div class="subj b-geo">
+          <h3><i></i>Geography</h3>
+          <div class="pills">
+            <button type="button" class="pill" data-subject="Geography" data-topic="Landforms &amp; Tectonics">Landforms &amp; Tectonics</button>
+            <button type="button" class="pill" data-subject="Geography" data-topic="Climate &amp; Weather">Climate &amp; Weather</button>
+            <button type="button" class="pill" data-subject="Geography" data-topic="Population">Population</button>
+          </div>
+        </div>
+        <div class="subj b-re">
+          <h3><i></i>Research &amp; Enquiry</h3>
+          <div class="pills">
+            <button type="button" class="pill" data-subject="Research &amp; Enquiry" data-topic="Research Question">Research Question</button>
+            <button type="button" class="pill" data-subject="Research &amp; Enquiry" data-topic="Data Collection">Data Collection</button>
+            <button type="button" class="pill" data-subject="Research &amp; Enquiry" data-topic="Analysis &amp; Evaluation">Analysis &amp; Evaluation</button>
+          </div>
+        </div>
+
+        <div class="cat-label">Sanat &amp; Spor</div>
+        <div class="subj b-art">
+          <h3><i></i>Visual Arts / Music</h3>
+          <div class="pills">
+            <button type="button" class="pill" data-subject="Visual Arts" data-topic="Sketching">Sketching</button>
+            <button type="button" class="pill" data-subject="Visual Arts" data-topic="Color Theory">Color Theory</button>
+            <button type="button" class="pill" data-subject="Music" data-topic="Music Theory">Music Theory</button>
+          </div>
+        </div>
+        <div class="subj b-pe">
+          <h3><i></i>PE</h3>
+          <div class="pills">
+            <button type="button" class="pill" data-subject="PE" data-topic="Fitness">Fitness</button>
+            <button type="button" class="pill" data-subject="PE" data-topic="Game Strategies">Game Strategies</button>
           </div>
         </div>
 
