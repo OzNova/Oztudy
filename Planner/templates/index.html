@@ -960,14 +960,20 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
     var ss = $("school-strip");
     if (!ss){ return; }
     if (!s || !s.date){ ss.className = "school-strip"; ss.hidden = true; return; }
-    ss.className = "school-strip show" + (s.status === "school" ? "" : " off");
+    ss.className = "school-strip show" + (s.status === "holiday" ? " off" : "");
     ss.hidden = false;
-    $("ss-badge").textContent = s.status === "school" ? "🏫 DERS GÜNÜ" : "🌤 SERBEST";
     if (s.status === "school"){
+      $("ss-badge").textContent = "🏫 DERS GÜNÜ";
       $("ss-subjects").textContent = "Bugün: " + (s.subjects_today || []).join(" · ");
       $("ss-meta").textContent = s.day + " · okul " + s.school_window + " · öğle " + s.lunch + " · çalışma sonrası";
       $("ss-note").textContent = "yarın: " + (s.subjects_next_day || []).join(" · ");
+    } else if (s.status === "weekend"){
+      $("ss-badge").textContent = "🌤 HAFTA SONU PROGRAMI";
+      $("ss-subjects").textContent = (s.subjects_today && s.subjects_today.length ? "Bugün: " + s.subjects_today.join(" · ") : "Hafta sonu programı yok");
+      $("ss-meta").textContent = s.day + " · tüm gün serbest";
+      $("ss-note").textContent = "yarın: " + (s.subjects_next_day || []).join(" · ");
     } else {
+      $("ss-badge").textContent = "🌤 SERBEST";
       $("ss-subjects").textContent = (s.status_label || "Serbest gün");
       $("ss-meta").textContent = s.day + " · tüm gün serbest";
       $("ss-note").textContent = "";
