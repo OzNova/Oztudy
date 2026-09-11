@@ -45,6 +45,73 @@ MODE_SUFFIX = {
     "recall": "tekrar odaklı çalış",
 }
 
+# ============ 9-A weekly timetable ============
+# Python weekday(): Mon=0 .. Sun=6 -> subjects of that day (periods 08:00-15:30).
+TIMETABLE = {
+    0: ["MATH", "ENG", "TUR", "BIO", "VIA/MUS"],
+    1: ["ENG", "MATH", "GER", "PHY", "TUR"],
+    2: ["CHE", "ENG", "HIS", "PHY", "DT", "GER"],
+    3: ["TUR", "BIO", "MATH", "HIS", "ECL"],
+    4: ["GER", "PE", "R&E", "CHE", "GEO", "ENG"],
+    5: [],
+    6: [],
+}
+
+# Fixed non-study school blocks: 08:00-15:30 on schooldays, lunch 12:35-13:20.
+SCHOOL_START = 480   # 08:00
+SCHOOL_END = 930     # 15:30
+LUNCH = (755, 800)   # 12:35 - 13:20
+PERIOD_SLOTS = [
+    (480, 525, "P1"), (530, 575, "P2"), (580, 625, "P3"),
+    (625, 640, "Ara"), (640, 685, "P4"), (690, 735, "P5"),
+    (735, 755, "Boş"), (755, 800, "Öğle Yemeği"),
+    (800, 850, "P6"), (855, 905, "P7"), (910, 930, "P8"),
+]
+
+# Timetable code -> accepted subject names (match planner topic subjects).
+SUBJECT_ALIASES = {
+    "MATH": ["math", "mathematics", "matematik"],
+    "ENG": ["english", "english literature", "ingilizce", "iel"],
+    "TUR": ["turkish", "turkish language", "türkçe", "türk dili"],
+    "BIO": ["biology", "biyoloji"],
+    "CHE": ["chemistry", "kimya"],
+    "PHY": ["physics", "fizik"],
+    "GER": ["german", "almanca"],
+    "HIS": ["history", "tarih"],
+    "GEO": ["geography", "coğrafya"],
+    "DT": ["design", "design and technology", "design & technology", "tasarım"],
+    "ECL": ["ecl", "english as a co-language", "english class"],
+    "VIA/MUS": ["visual arts", "visual arts/music", "music", "müzik", "sanat", "art", "via/mus"],
+    "PE": ["pe", "physical education", "physical ed", "beden eğitimi", "beden"],
+    "R&E": ["research", "research & enquiry", "araştırma", "rea", "r&e"],
+}
+
+# ============ 2026-2027 academic calendar (Turkey, editable) ============
+ACADEMIC_YEAR = "2026-2027"
+TERM_1 = ("2026-09-08", "2027-01-22")
+SEMESTER_BREAK = ("2027-01-23", "2027-02-05")
+TERM_2 = ("2027-02-08", "2027-06-18")
+SUMMER_START = "2027-06-19"
+
+# Single no-school days (national holidays / ceremonies).
+NO_SCHOOL_DAYS = {
+    "2026-09-09": "Uyum Haftası (okul yok)",
+    "2026-10-29": "Cumhuriyet Bayramı",
+    "2027-01-01": "Yılbaşı",
+    "2027-04-23": "23 Nisan Ulusal Egemenlik ve Çocuk Bayramı",
+    "2027-05-19": "19 Mayıs Atatürk'ü Anma, Gençlik ve Spor Bayramı",
+}
+
+# No-school ranges (midterm breaks, semester break, bayram, summer).
+NO_SCHOOL_RANGES = [
+    ("2026-11-16", "2026-11-20", "Ara Tatil (Kasım)"),
+    ("2027-01-23", "2027-02-05", "Yarıyıl Tatili"),
+    ("2027-04-05", "2027-04-09", "Ara Tatil (Nisan)"),
+    ("2027-04-11", "2027-04-12", "Ramazan Bayramı"),
+    ("2027-05-18", "2027-05-21", "Kurban Bayramı"),
+    ("2027-06-19", "2027-09-30", "Yaz Tatili"),
+]
+
 app = Flask(__name__)
 
 
@@ -291,6 +358,52 @@ def _weekday_short(daykey):
     return names[datetime.strptime(daykey, "%Y-%m-%d").weekday()]
 
 
+def _day_status(daykey):
+    d = datetime.strptime(daykey, "%Y-%m-%d")
+    if d.weekday() >= 5:
+        return "weekend", "Hafta sonu"
+    if daykey in NO_SCHOOL_DAYS:
+        return "holiday", NO_SCHOOL_DAYS[daykey]
+    for start, end, label in NO_SCHOOL_RANGES:
+        if start <= daykey <= end:
+            return "holiday", label
+    return "school", "Okul günü"
+
+
+def _subjects_for_day(daykey):
+    d = datetime.strptime(daykey, "%Y-%m-%d")
+    status, label = _day_status(daykey)
+    if status != "school":
+        return [], status, label
+    return TIMETABLE.get(d.weekday(), []), status, label
+
+
+def _next_school_day(daykey, step=1):
+    cur = datetime.strptime(daykey, "%Y-%m-%d")
+    for _ in range(40):
+        cur += timedelta(days=step)
+        key = cur.strftime("%Y-%m-%d")
+        if _day_status(key)[0] == "school":
+            return key
+    return daykey
+
+
+def _subject_code(name):
+    norm = str(name or "").strip().lower()
+    for code, names in SUBJECT_ALIASES.items():
+        if norm in names:
+            return code
+    return None
+
+
+def _period_table(weekday):
+    n = len(TIMETABLE.get(weekday, []))
+    return [
+        {"period": label, "start": _hhmm(a), "end": _hhmm(b)}
+        for (a, b, label) in PERIOD_SLOTS[:n]
+    ]
+
+
 def _add_missed(doc, item):
     missed = doc.setdefault("missed", [])
     for m in missed:
@@ -427,6 +540,26 @@ def build_plan(topics, start, end, duration_h, mode, criterion):
     if e - s < 30:
         return None, "Zaman penceresi en az 30 dakika olmalı."
 
+    today_key = _day_key(int(time.time()))
+    day_status, day_label = _day_status(today_key)
+    today_subjects, _, _ = _subjects_for_day(today_key)
+    next_key = _next_school_day(today_key)
+    tomorrow_subjects, _, _ = _subjects_for_day(next_key)
+
+    # School hours 08:00-15:30 are fixed non-study blocks: on a school day,
+    # push an overlapping planning window to start after school (15:30).
+    school_clamped = False
+    if day_status == "school":
+        if s < SCHOOL_END and e > SCHOOL_START:
+            length = e - s
+            s = max(s, SCHOOL_END)
+            e = min(s + length, 24 * 60 - 1)
+            if e - s < 30:
+                e = min(s + 30, 24 * 60 - 1)
+            school_clamped = True
+        if e <= s:
+            return None, "Okul günü çalışma penceresi 15:30 sonrasına kaydırılamıyor — pencereyi güncelle."
+
     mode = mode if mode in MODE_LABELS else "practice"
     criterion = criterion if criterion in CRITERIA else "A"
     duration_h = max(1, int(duration_h or 0))
@@ -437,7 +570,21 @@ def build_plan(topics, start, end, duration_h, mode, criterion):
         if conf not in CONF_BLOCKS:
             conf = "yellow"
         items.append({"subject": str(t.get("subject")), "topic": str(t.get("topic")), "confidence": conf})
-    items.sort(key=lambda it: CONF_RANK.get(it["confidence"], 1))
+
+    # Prioritize homework/revision for subjects taught today or the next school
+    # day (TIMETABLE values are already canonical codes), tie-broken by
+    # confidence rank (red > yellow > green).
+    today_codes = set(today_subjects)
+    tomorrow_codes = set(tomorrow_subjects)
+    for it in items:
+        code = _subject_code(it["subject"])
+        if code in today_codes:
+            it["urgency"] = 0
+        elif code in tomorrow_codes:
+            it["urgency"] = 1
+        else:
+            it["urgency"] = 2
+    items.sort(key=lambda it: (it["urgency"], CONF_RANK.get(it["confidence"], 1)))
 
     n = len(items)
     window = e - s
@@ -524,6 +671,14 @@ def build_plan(topics, start, end, duration_h, mode, criterion):
         note_parts.insert(0, f"⚠ {n} konu için en az {required_minutes / 60:.1f} saat gerekli — bloklar ölçeklendi")
     if dropped:
         note_parts.append("Sığmayan: " + ", ".join(dropped))
+    if school_clamped:
+        note_parts.append("🏫 Okul sonrasına alındı (15:30 sonrası)")
+    if day_status == "school" and today_subjects:
+        tsub = ", ".join(today_subjects)
+        nsub = ", ".join(tomorrow_subjects) if tomorrow_subjects else "—"
+        note_parts.append(f"📚 Bugün: {tsub} · Yarın: {nsub}")
+    if day_status in ("holiday", "weekend"):
+        note_parts.append(f"🌤 {day_label} — tüm gün serbest")
 
     plan = {
         "id": uuid.uuid4().hex[:8],
@@ -542,6 +697,20 @@ def build_plan(topics, start, end, duration_h, mode, criterion):
             "dropped": dropped,
             "mode": MODE_LABELS.get(mode, mode),
             "criterion": CRITERIA[criterion],
+            "school": {
+                "academic_year": ACADEMIC_YEAR,
+                "date": today_key,
+                "day": _weekday_short(today_key),
+                "status": day_status,
+                "status_label": day_label,
+                "school_day": day_status == "school",
+                "school_window": f"{_hhmm(SCHOOL_START)}-{_hhmm(SCHOOL_END)}",
+                "lunch": f"{_hhmm(LUNCH[0])}-{_hhmm(LUNCH[1])}",
+                "clamped_to_after_school": school_clamped,
+                "subjects_today": today_subjects,
+                "subjects_next_day": tomorrow_subjects,
+                "periods": _period_table(datetime.strptime(today_key, "%Y-%m-%d").weekday()),
+            },
             "fit": {
                 "scaled": scaled,
                 "topic_count": n,
