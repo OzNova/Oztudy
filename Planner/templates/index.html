@@ -381,6 +381,23 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
 .ss-meta{color:var(--muted);font-weight:500}
 .ss-note{color:var(--faint);font-weight:500}
 
+.weekend-card{margin-top:8px;padding:12px 16px;background:var(--surface);border:1px solid var(--border);
+  border-radius:12px;box-shadow:0 1px 2px rgba(15,23,42,.04),0 4px 12px rgba(15,23,42,.03);
+  display:none;width:fit-content;max-width:100%}
+.weekend-card.show{display:block;animation:fadeIn .2s ease}
+.weekend-head{font-size:12.5px;font-weight:700;letter-spacing:-0.2px;color:var(--text);margin-bottom:8px;
+  display:flex;align-items:center;gap:7px}
+.weekend-day{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px}
+.weekend-day:last-child{margin-bottom:0}
+.weekend-name{font-size:11px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;min-width:90px;flex:none}
+.weekend-name.wt-sat{color:#6366F1}
+.weekend-name.wt-sun{color:#0EA5E9}
+.weekend-topics{display:flex;flex-wrap:wrap;gap:5px}
+.weekend-pill{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:600;color:var(--muted);
+  background:var(--bg);border:1px solid var(--border-soft);border-radius:999px;padding:3px 9px;
+  letter-spacing:-0.1px;white-space:nowrap}
+.weekend-pill .wdot{width:5px;height:5px;border-radius:50%;flex-shrink:0}
+
 /* ============ Analytics (hidden by default) ============ */
 .stats-panel{display:none;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px 22px;box-shadow:none}
 .stats-panel.show{display:block;animation:fadeIn .25s ease}
@@ -714,6 +731,19 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
         <span class="ss-note" id="ss-note"></span>
       </div>
 
+      <!-- Weekend programme -->
+      <div class="weekend-card" id="weekend-card" hidden>
+        <div class="weekend-head">🗓 Hafta Sonu Programı</div>
+        <div class="weekend-day">
+          <span class="weekend-name wt-sat">Cumartesi</span>
+          <span class="weekend-topics" id="weekend-sat"></span>
+        </div>
+        <div class="weekend-day">
+          <span class="weekend-name wt-sun">Pazar</span>
+          <span class="weekend-topics" id="weekend-sun"></span>
+        </div>
+      </div>
+
       <!-- Banners -->
       <div class="catchup-bar" id="catchup-bar">
         <span class="cb-icon">●</span>
@@ -953,7 +983,7 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
 
   function fetchSchool(){
     fetch("/api/school").then(function(r){ return r.json(); }).then(function(d){
-      if (d.status === "success") renderSchool(d.school);
+      if (d.status === "success"){ renderSchool(d.school); renderWeekend(d.school); }
     }).catch(function(){});
   }
   function renderSchool(s){
@@ -978,6 +1008,30 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
       $("ss-meta").textContent = s.day + " · tüm gün serbest";
       $("ss-note").textContent = "";
     }
+  }
+  function renderWeekend(s){
+    var card = $("weekend-card");
+    if (!card) return;
+    var wp = s && s.weekend_program;
+    if (!wp || !s.date){ card.hidden = true; card.classList.remove("show"); return; }
+    card.hidden = false; card.classList.add("show");
+    var dots = {
+      "MATH":"#6366F1","ENG":"#0EA5E9","TUR":"#F43F5E","PHY":"#F87171","BIO":"#34D399","CHE":"#A78BFA",
+      "GER":"#F59E0B","HIS":"#D97706","GEO":"#14B8A6","DT":"#8B5CF6","ECL":"#06B6D4",
+      "VIA/MUS":"#EC4899","PE":"#22C55E","R&E":"#64748B"
+    };
+    ["sat","sun"].forEach(function(day){
+      var box = $("weekend-" + day);
+      if (!box) return;
+      box.innerHTML = "";
+      (wp[day] || []).forEach(function(code){
+        var sp = document.createElement("span"); sp.className = "weekend-pill";
+        var dot = document.createElement("span"); dot.className = "wdot";
+        dot.style.background = dots[code] || "#94A3B8";
+        sp.appendChild(dot); sp.appendChild(document.createTextNode(code));
+        box.appendChild(sp);
+      });
+    });
   }
 
   function fetchGame(){

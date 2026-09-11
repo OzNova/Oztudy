@@ -431,6 +431,10 @@ def _school_digest(day_key):
         "lunch": f"{_hhmm(LUNCH[0])}-{_hhmm(LUNCH[1])}",
         "subjects_today": subjects,
         "subjects_next_day": next_subjects,
+        "weekend_program": {
+            "sat": WEEKEND_PROGRAM.get(5, []),
+            "sun": WEEKEND_PROGRAM.get(6, []),
+        },
         "periods": _period_table(d.weekday()),
     }
 
