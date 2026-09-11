@@ -1,0 +1,9 @@
+Planner/Academic Strategy.app/
+Planner/dist/
+Planner/userData/
+Planner/*.log
+Planner/error.log
+Planner/planner_server.log
+Planner/run_desktop_test.log
+.DS_Store
+.git/
