@@ -501,12 +501,25 @@ def _check_badges(doc, g):
         known.add("IB Survivor")
     if streak >= 10:
         known.add("10-Day Streak")
+    if streak >= 5:
+        known.add("Week Warrior")
     if streak >= 3:
         known.add("Comet Chaser")
     if int(g.get("xp", 0)) >= 500:
         known.add("Star Navigator")
     if int(g.get("base_modules", 0)) >= 8:
         known.add("Outpost Architect")
+    today = datetime.now().date()
+    recent = set()
+    for h in hist:
+        try:
+            d = datetime.strptime(str(h.get("day") or ""), "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        if (today - d).days < 7:
+            recent.add(str(h.get("day")))
+    if len(recent) >= 5:
+        known.add("Weekly Target")
     g["badges"] = sorted(known)
 
 
@@ -1038,11 +1051,9 @@ def blocks():
         doc = _load_doc()
         plan = doc.get("plan")
         if body.get("clear"):
-            if plan is None:
-                doc["plan"] = None
-                _save_doc(doc)
-                return jsonify({"status": "success", "plan": None})
-            return jsonify({"status": "error", "message": "Mevcut plan korunur."}), 400
+            doc["plan"] = None
+            _save_doc(doc)
+            return jsonify({"status": "success", "plan": None})
         if not plan:
             return jsonify({"status": "error", "message": "Blok bulunamadı."}), 404
         target = body.get("id")
