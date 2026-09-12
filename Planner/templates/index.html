@@ -444,6 +444,32 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
 .ss-meta{color:var(--muted);font-weight:500}
 .ss-note{color:var(--faint);font-weight:500}
 
+.next-exam{display:none;align-items:center;gap:9px;flex-wrap:wrap;margin:0 0 8px;padding:8px 14px;
+  background:linear-gradient(90deg,#F5F3FF,#EEF2FF);border:1px solid var(--primary-line);border-radius:12px;
+  box-shadow:0 1px 2px rgba(99,102,241,.08);font-size:12.5px;width:fit-content;max-width:100%}
+.next-exam.show{display:flex;animation:fadeIn .2s ease}
+.next-exam.ongoing{background:linear-gradient(90deg,#FFF7ED,#FFFBEB);border-color:var(--warning-line);box-shadow:0 1px 2px rgba(245,158,11,.10)}
+.next-exam.done{background:var(--surface);border-color:var(--border);box-shadow:none}
+.next-exam.done .ne-count{color:var(--muted);font-weight:700}
+.ne-ic{margin-right:1px}
+.ne-badge{font-size:10.5px;font-weight:800;letter-spacing:.05em;flex-shrink:0;color:var(--primary);
+  background:var(--primary-soft);border:1px solid var(--primary-line);border-radius:999px;padding:2px 9px}
+.next-exam.ongoing .ne-badge{color:var(--warning);background:var(--warning-soft);border-color:var(--warning-line)}
+.next-exam.done .ne-badge{color:var(--success);background:var(--success-soft);border-color:var(--success-line)}
+.ne-title{font-weight:700;color:var(--text);letter-spacing:-0.1px}
+.ne-range{color:var(--muted);font-weight:500}
+.ne-count{margin-left:auto;font-size:14px;font-weight:800;color:var(--primary);letter-spacing:-0.2px}
+.next-exam.ongoing .ne-count{color:var(--warning)}
+:root[data-theme="dark"] .next-exam{background:linear-gradient(90deg,var(--primary-soft),#1C2547);border-color:var(--primary-line)}
+:root[data-theme="dark"] .next-exam.ongoing{background:var(--warning-soft);border-color:var(--warning-line)}
+:root[data-theme="dark"] .next-exam.done{background:var(--surface);border-color:var(--border)}
+
+.set-textarea{width:100%;min-width:320px;max-width:460px;border:1px solid var(--border);border-radius:8px;
+  background:var(--surface);color:var(--text);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  font-size:12px;padding:8px 10px;line-height:1.6;resize:vertical}
+.set-textarea:focus{outline:none;border-color:var(--primary-line);box-shadow:0 0 0 3px var(--primary-soft)}
+.set-full{flex:1}
+
 .weekend-card{margin-top:8px;padding:12px 16px;background:var(--surface);border:1px solid var(--border);
   border-radius:12px;box-shadow:0 1px 2px rgba(15,23,42,.04),0 4px 12px rgba(15,23,42,.03);
   display:none;width:fit-content;max-width:100%}
@@ -862,6 +888,15 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
         <span class="ss-note" id="ss-note"></span>
       </div>
 
+      <!-- Exam countdown -->
+      <div class="next-exam" id="next-exam" hidden>
+        <svg class="ic ne-ic"><use href="#i-clock"/></svg>
+        <span class="ne-badge" id="ne-badge">SONRAKİ SINAV</span>
+        <b class="ne-title" id="ne-title"></b>
+        <span class="ne-range" id="ne-range"></span>
+        <b class="ne-count" id="ne-count"></b>
+      </div>
+
       <!-- Weekend programme -->
       <div class="weekend-card" id="weekend-card" hidden>
         <div class="weekend-head">Hafta Sonu Programı</div>
@@ -979,6 +1014,10 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
           <div class="set-row">
             <div class="set-label">Çalışma süresi (saat)</div>
             <div class="set-controls"><input type="number" id="set-hours" class="set-num" min="1" max="12" step="1"> saat</div>
+          </div>
+          <div class="set-row">
+            <div class="set-label">Sınav Haftaları <span class="t">her satır: başlangıç · bitiş · etiket (YYYY-AA-GG)</span></div>
+            <div class="set-controls set-full"><textarea id="set-exams" class="set-textarea" rows="4" spellcheck="false"></textarea></div>
           </div>
           <div class="set-row set-actions">
             <span class="t">Süre/pencerede değişiklik yapılırsa plan, aynı konularla otomatik yenilenir.</span>
@@ -2576,6 +2615,74 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
     }).catch(function(){});
   }
 
+  var MONTHS_TR = ["Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"];
+  function fmtExamDate(ds, withYear){
+    var p = String(ds || "").split("-");
+    if (p.length !== 3) return ds || "";
+    var m = parseInt(p[1], 10) - 1;
+    var s = parseInt(p[2], 10) + " " + MONTHS_TR[(m >= 0 && m < 12) ? m : 0];
+    if (withYear) s += " " + p[0];
+    return s;
+  }
+  function renderExamCountdown(next){
+    var card = $("next-exam");
+    if (!card) return;
+    if (!next){
+      card.hidden = true;
+      card.className = "next-exam";
+      return;
+    }
+    card.hidden = false;
+    card.className = "next-exam show" + (next.ongoing ? " ongoing" : "");
+    var t = $("ne-title"), r = $("ne-range"), c = $("ne-count");
+    if (t) t.textContent = next.ongoing ? "Sınav bu hafta: " + next.label : next.label;
+    if (r) r.textContent = fmtExamDate(next.start) + " – " + fmtExamDate(next.end, true);
+    if (c) c.textContent = next.ongoing ? "BU HAFTA" : (next.days_until + " gün");
+  }
+  function fillExamsForm(exams){
+    var box = $("set-exams");
+    if (!box || !exams) return;
+    box.value = exams.map(function(w){
+      return String(w.start) + " " + String(w.end) + " " + String(w.label || "");
+    }).join("\n");
+  }
+  function parseExamsForm(){
+    var box = $("set-exams");
+    var out = [];
+    if (!box || !box.value.trim()) return out;
+    box.value.split("\n").forEach(function(line){
+      line = line.trim();
+      if (!line) return;
+      var parts = line.split(/\s+/);
+      if (parts.length < 2) return;
+      var start = parts[0], end = parts[1];
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) return;
+      var label = parts.slice(2).join(" ");
+      out.push({ start: start, end: end, label: label || "" });
+    });
+    return out;
+  }
+  function loadExams(){
+    fetch("/api/exams").then(function(r){ return r.json(); }).then(function(d){
+      if (d.status !== "success") return;
+      renderExamCountdown(d.next);
+      fillExamsForm(d.exams);
+    }).catch(function(){});
+  }
+  function saveExamsFromForm(){
+    var exams = parseExamsForm();
+    if (!exams.length) return;
+    fetch("/api/exams", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ exams: exams })
+    }).then(function(r){ return r.json(); }).then(function(d){
+      if (d.status !== "success"){ setMsg(d.message || "Sınavlar kaydedilemedi.", "err"); return; }
+      renderExamCountdown(d.next);
+      fillExamsForm(d.exams);
+    }).catch(function(){ setMsg("Bağlantı hatası.", "err"); });
+  }
+
   function rebuildPlanWithSettings(){
     if (!lastTopics || !lastTopics.length){
       setMsg("Plan yenilemek için önce bir plan oluştur.", "err");
@@ -2630,6 +2737,7 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
       applySettingsToWizard(appSettings);
       if (changed){ rebuildPlanWithSettings(); }
       else setMsg("✓ Ayarlar kaydedildi.", "ok");
+      saveExamsFromForm();
     }).catch(function(){ setMsg("Bağlantı hatası.", "err"); });
   }
 
@@ -2775,6 +2883,7 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
   fetchGame();
   fetchSchool();
   loadSettings();
+  loadExams();
   rebuildChips();
 })();
 </script>

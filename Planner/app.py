@@ -23,6 +23,42 @@ DEFAULT_SETTINGS = {
     "theme": "light",
 }
 
+EXAM_DEFAULTS = [
+    {"id": "t1w1", "label": "1. Dönem 1. Sınav", "start": "2026-10-30", "end": "2026-11-06"},
+    {"id": "t1w2", "label": "1. Dönem 2. Sınav", "start": "2026-12-24", "end": "2026-12-31"},
+    {"id": "t2w1", "label": "2. Dönem 1. Sınav", "start": "2027-03-25", "end": "2027-04-01"},
+    {"id": "t2w2", "label": "2. Dönem 2. Sınav", "start": "2027-05-31", "end": "2027-06-04"},
+]
+
+
+def _exams_for(doc):
+    weeks = doc.get("exam_weeks")
+    if not isinstance(weeks, list) or not weeks:
+        return [dict(w) for w in EXAM_DEFAULTS]
+    return weeks
+
+
+def _next_exam(weeks, today=None):
+    today = today or datetime.now().date()
+    today_key = today.isoformat()
+    best = None
+    for w in weeks:
+        start = str(w.get("start") or "")
+        end = str(w.get("end") or "")
+        if not start or not end:
+            continue
+        if end < today_key:
+            continue
+        if best is None or start < best["start"]:
+            best = {"label": w.get("label") or "Sınav", "start": start, "end": end}
+    if best is None:
+        return None
+    days = (datetime.strptime(best["start"], "%Y-%m-%d").date() - today).days
+    ongoing = days <= 0 and datetime.strptime(best["end"], "%Y-%m-%d").date() >= today
+    best["days_until"] = days
+    best["ongoing"] = ongoing
+    return best
+
 
 def _settings_for(doc):
     st = dict(DEFAULT_SETTINGS)
@@ -782,6 +818,47 @@ def save_settings():
         _save_doc(doc)
         merged = _settings_for(doc)
     return jsonify({"status": "success", "settings": merged})
+
+
+@app.get("/api/exams")
+def get_exams():
+    with LOCK:
+        weeks = _exams_for(_load_doc())
+    return jsonify({"status": "success", "exams": weeks, "next": _next_exam(weeks)})
+
+
+@app.post("/api/exams")
+def save_exams():
+    body = request.get_json(silent=True) or {}
+    raw = body.get("exams")
+    if not isinstance(raw, list):
+        return jsonify({"status": "error", "message": "Sınav listesi geçersiz."}), 400
+    weeks = []
+    for i, it in enumerate(raw):
+        if not isinstance(it, dict):
+            continue
+        start = str(it.get("start") or "").strip()
+        end = str(it.get("end") or "").strip()
+        if not start or not end:
+            continue
+        try:
+            datetime.strptime(start, "%Y-%m-%d")
+            datetime.strptime(end, "%Y-%m-%d")
+        except ValueError:
+            return jsonify({"status": "error", "message": "Tarih biçimi YYYY-AA-GG olmalı."}), 400
+        weeks.append({
+            "id": str(it.get("id") or ("exam%d" % i)),
+            "label": str(it.get("label") or ("Sınav %d" % (i + 1))),
+            "start": start,
+            "end": end,
+        })
+    if not weeks:
+        return jsonify({"status": "error", "message": "En az bir sınav girilmelidir."}), 400
+    with LOCK:
+        doc = _load_doc()
+        doc["exam_weeks"] = weeks
+        _save_doc(doc)
+    return jsonify({"status": "success", "exams": weeks, "next": _next_exam(weeks)})
 
 
 @app.post("/api/plan")
