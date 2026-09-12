@@ -61,18 +61,37 @@ def _next_exam(weeks, today=None):
     return best
 
 HABIT_DEFAULTS = [
-    {"id": "gym", "label": "Gym", "time": "16:30", "color": "#4F46E5"},
-    {"id": "okuma", "label": "Okuma", "time": "21:00", "color": "#059669"},
-    {"id": "uyku", "label": "Uyku", "time": "22:30", "color": "#0891B2"},
+    {"id": "gym", "label": "Gym", "time": "16:30", "color": "#4F46E5", "icon": "gym"},
+    {"id": "okuma", "label": "Okuma", "time": "21:00", "color": "#059669", "icon": "book"},
+    {"id": "uyku", "label": "Uyku", "time": "22:30", "color": "#0891B2", "icon": "moon"},
 ]
 HABIT_COLORS = ["#4F46E5", "#059669", "#D97706", "#DB2777", "#0891B2", "#7C3AED"]
+
+
+def _habit_icon(label):
+    low = str(label or "").lower()
+    if any(k in low for k in ("gym", "spor", "antrenman", "egzersiz", "fitness")):
+        return "gym"
+    if any(k in low for k in ("uyku", "uyu", "sleep")):
+        return "moon"
+    if any(k in low for k in ("oku", "okuma", "kitap", "read")):
+        return "book"
+    return "flag"
 
 
 def _habits_for(doc):
     habits = doc.get("habits")
     if not isinstance(habits, list) or not habits:
         return [dict(h) for h in HABIT_DEFAULTS]
-    return habits
+    out = []
+    for h in habits:
+        item = dict(h)
+        if not item.get("icon"):
+            item["icon"] = _habit_icon(item.get("label"))
+        if not item.get("color"):
+            item["color"] = HABIT_COLORS[len(out) % len(HABIT_COLORS)]
+        out.append(item)
+    return out
 
 
 def _habit_track(doc):
@@ -997,7 +1016,8 @@ def save_habits():
                 hid = "h%d" % (len(habits) + 100 + i)
             seen.add(hid)
             color = old["color"] if old else HABIT_COLORS[len(habits) % len(HABIT_COLORS)]
-            habits.append({"id": hid, "label": label, "time": time_s or "", "color": color})
+            icon = old["icon"] if (old and old.get("icon")) else _habit_icon(label)
+            habits.append({"id": hid, "label": label, "time": time_s or "", "color": color, "icon": icon})
         existing_ids = {h["id"] for h in habits}
         track = _habit_track(doc)
         track = {date_key: [hid for hid in ids if hid in existing_ids] for date_key, ids in track.items()}
