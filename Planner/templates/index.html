@@ -470,6 +470,26 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
 .set-textarea:focus{outline:none;border-color:var(--primary-line);box-shadow:0 0 0 3px var(--primary-soft)}
 .set-full{flex:1}
 
+.habits-card{padding:12px 16px;margin-top:12px}
+.habits-list{margin-top:2px}
+.habit-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--border-soft,var(--border))}
+.habit-row:first-child{border-top:0}
+.hmeta{display:flex;align-items:center;gap:7px;min-width:0;flex-shrink:1}
+.hdot{width:9px;height:9px;border-radius:50%;flex:none}
+.hname{font-size:13px;font-weight:700;color:var(--text);letter-spacing:-0.1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.httime{font-size:11px;color:var(--faint);font-weight:600;white-space:nowrap}
+.hstreak{font-size:11px;font-weight:800;color:var(--primary);padding:1px 8px;background:var(--primary-soft);border:1px solid var(--primary-line);border-radius:999px;flex:none;white-space:nowrap}
+.hgrid{margin-left:auto;display:grid;grid-template-columns:repeat(7,20px);gap:4px;flex:none}
+.hk{width:20px;height:14px;font-size:9px;text-align:center;color:var(--faint);font-weight:700;line-height:14px}
+.hc{width:19px;height:19px;border-radius:50%;border:1px solid var(--border);background:transparent;padding:0;cursor:default;transition:all .12s ease}
+.hc.today{border-color:var(--faint)}
+.hc.today.clickable{outline:2px solid var(--primary-soft);cursor:pointer}
+.hc.today.clickable:hover{border-color:var(--primary-line);outline-color:var(--primary-line)}
+.hc.on{background:var(--primary);border-color:var(--primary)}
+.hc.today.on{outline-color:var(--primary-soft)}
+:root[data-theme="dark"] .hc{background:transparent}
+:root[data-theme="dark"] .hc.on{background:var(--primary);border-color:var(--primary)}
+
 .weekend-card{margin-top:8px;padding:12px 16px;background:var(--surface);border:1px solid var(--border);
   border-radius:12px;box-shadow:0 1px 2px rgba(15,23,42,.04),0 4px 12px rgba(15,23,42,.03);
   display:none;width:fit-content;max-width:100%}
@@ -947,6 +967,17 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
         <div id="weak-list"></div>
       </section>
 
+      <!-- Habits -->
+      <section class="card habits-card">
+        <div class="weak-head">
+          <h2>Alışkanlıklar</h2>
+          <span class="wcount" id="habits-sub">bugün 0/0</span>
+        </div>
+        <div class="habits-list" id="habits-list">
+          <div class="empty">Alışkanlık eklemek için Ayarlar'a gidin.</div>
+        </div>
+      </section>
+
       <!-- Analytics panel (hidden by default) -->
       <div class="stats-panel" id="analytics-panel" hidden>
         <div class="stats-panel-head">
@@ -1018,6 +1049,10 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
           <div class="set-row">
             <div class="set-label">Sınav Haftaları <span class="t">her satır: başlangıç · bitiş · etiket (YYYY-AA-GG)</span></div>
             <div class="set-controls set-full"><textarea id="set-exams" class="set-textarea" rows="4" spellcheck="false"></textarea></div>
+          </div>
+          <div class="set-row">
+            <div class="set-label">Alışkanlıklar <span class="t">her satır: etiket saat (Ör. Gym 16:30)</span></div>
+            <div class="set-controls set-full"><textarea id="set-habits" class="set-textarea" rows="3" spellcheck="false"></textarea></div>
           </div>
           <div class="set-row set-actions">
             <span class="t">Süre/pencerede değişiklik yapılırsa plan, aynı konularla otomatik yenilenir.</span>
@@ -2683,6 +2718,158 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
     }).catch(function(){ setMsg("Bağlantı hatası.", "err"); });
   }
 
+  var HABIT_DAY_NAMES = ["Pzr", "Pzt", "Sal", "Çar", "Prş", "Cum", "Cmt"];
+  var habitState = null;
+  function renderHabits(data){
+    var list = $("habits-list");
+    if (!list) return;
+    var habits = (data && data.habits) || [];
+    var track = (data && data.track) || {};
+    var days = (data && data.days) || [];
+    var streaks = (data && data.streaks) || {};
+    var today = (data && data.today) || localDayKey();
+    list.innerHTML = "";
+    if (!habits.length){
+      var e = document.createElement("div");
+      e.className = "empty";
+      e.textContent = "Alışkanlık eklemek için Ayarlar'a gidin.";
+      list.appendChild(e);
+      return;
+    }
+    var hrow = document.createElement("div");
+    hrow.className = "habit-row";
+    var hmeta = document.createElement("div");
+    hmeta.className = "hmeta";
+    hmeta.style.visibility = "hidden";
+    var hsp = document.createElement("span");
+    hsp.className = "hname";
+    hsp.textContent = ".";
+    hmeta.appendChild(hsp);
+    hrow.appendChild(hmeta);
+    var hgrid = document.createElement("div");
+    hgrid.className = "hgrid";
+    days.forEach(function(ds){
+      var dt = new Date(ds + "T12:00:00");
+      var k = document.createElement("span");
+      k.className = "hk";
+      k.textContent = HABIT_DAY_NAMES[(dt.getDay() % 7)];
+      hgrid.appendChild(k);
+    });
+    hrow.appendChild(hgrid);
+    list.appendChild(hrow);
+
+    var doneToday = 0;
+    habits.forEach(function(h){
+      var row = document.createElement("div");
+      row.className = "habit-row";
+      var meta = document.createElement("div");
+      meta.className = "hmeta";
+      var dot = document.createElement("span");
+      dot.className = "hdot";
+      dot.style.background = h.color || "var(--primary)";
+      var nm = document.createElement("span");
+      nm.className = "hname";
+      nm.textContent = h.label;
+      meta.appendChild(dot);
+      meta.appendChild(nm);
+      if (h.time){
+        var tm = document.createElement("span");
+        tm.className = "httime";
+        tm.textContent = h.time;
+        meta.appendChild(tm);
+      }
+      var sp = document.createElement("span");
+      sp.className = "hstreak";
+      sp.textContent = (streaks[h.id] || 0) + " gün";
+      meta.appendChild(sp);
+      row.appendChild(meta);
+      var grid = document.createElement("div");
+      grid.className = "hgrid";
+      days.forEach(function(ds){
+        var on = track[ds] && track[ds].indexOf(h.id) !== -1;
+        var c = document.createElement("button");
+        c.type = "button";
+        c.className = "hc" + (on ? " on" : "") + (ds === today ? " today" : "");
+        if (ds === today){
+          c.classList.add("clickable");
+          c.title = "Bugünü işaretle";
+          c.addEventListener("click", function(){ toggleHabit(h.id, ds); });
+        }
+        if (on){
+          c.style.background = h.color || "var(--primary)";
+          c.style.borderColor = h.color || "var(--primary)";
+        } else {
+          c.style.background = "transparent";
+          c.style.borderColor = h.color || "var(--border)";
+        }
+        if (ds === today && on) doneToday++;
+        grid.appendChild(c);
+      });
+      row.appendChild(grid);
+      list.appendChild(row);
+    });
+    var sub = $("habits-sub");
+    if (sub) sub.textContent = "bugün " + doneToday + "/" + habits.length;
+  }
+  function fillHabitsForm(habits){
+    var box = $("set-habits");
+    if (!box) return;
+    box.value = (habits || []).map(function(h){
+      return (h.label || "") + (h.time ? " " + h.time : "");
+    }).join("\n");
+  }
+  function parseHabitsForm(){
+    var box = $("set-habits");
+    var out = [];
+    if (!box || !box.value.trim()) return out;
+    box.value.split("\n").forEach(function(line){
+      line = line.trim();
+      if (!line) return;
+      var m = line.match(/^(.+?)\s+(\d{2}:\d{2})$/);
+      if (m) out.push({ label: m[1].trim(), time: m[2] });
+      else out.push({ label: line, time: "" });
+    });
+    return out;
+  }
+  function loadHabits(){
+    fetch("/api/habits").then(function(r){ return r.json(); }).then(function(d){
+      if (d.status !== "success") return;
+      habitState = { habits: d.habits, track: d.track, days: d.days, today: d.today, streaks: d.streaks };
+      renderHabits(habitState);
+      fillHabitsForm(d.habits);
+    }).catch(function(){});
+  }
+  function toggleHabit(id, date){
+    if (!id || !date) return;
+    fetch("/api/habits/toggle", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: id, date: date })
+    }).then(function(r){ return r.json(); }).then(function(d){
+      if (d.status !== "success") return;
+      if (habitState){
+        habitState.track = d.track;
+        habitState.streaks = d.streaks;
+        habitState.today = d.today;
+      }
+      renderHabits(habitState);
+    }).catch(function(){});
+  }
+  function saveHabitsFromForm(){
+    var habits = parseHabitsForm();
+    if (!habits.length) return;
+    fetch("/api/habits/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ habits: habits })
+    }).then(function(r){ return r.json(); }).then(function(d){
+      if (d.status !== "success"){ setMsg(d.message || "Alışkanlıklar kaydedilemedi.", "err"); return; }
+      habitState = { habits: d.habits, track: d.track, days: d.days, today: d.today, streaks: d.streaks };
+      renderHabits(habitState);
+      fillHabitsForm(d.habits);
+    }).catch(function(){ setMsg("Bağlantı hatası.", "err"); });
+  }
+
   function rebuildPlanWithSettings(){
     if (!lastTopics || !lastTopics.length){
       setMsg("Plan yenilemek için önce bir plan oluştur.", "err");
@@ -2738,6 +2925,7 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
       if (changed){ rebuildPlanWithSettings(); }
       else setMsg("✓ Ayarlar kaydedildi.", "ok");
       saveExamsFromForm();
+      saveHabitsFromForm();
     }).catch(function(){ setMsg("Bağlantı hatası.", "err"); });
   }
 
@@ -2884,6 +3072,7 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
   fetchSchool();
   loadSettings();
   loadExams();
+  loadHabits();
   rebuildChips();
 })();
 </script>

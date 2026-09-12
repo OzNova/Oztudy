@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import threading
 import time
 import uuid
@@ -58,6 +59,60 @@ def _next_exam(weeks, today=None):
     best["days_until"] = days
     best["ongoing"] = ongoing
     return best
+
+HABIT_DEFAULTS = [
+    {"id": "gym", "label": "Gym", "time": "16:30", "color": "#4F46E5"},
+    {"id": "okuma", "label": "Okuma", "time": "21:00", "color": "#059669"},
+    {"id": "uyku", "label": "Uyku", "time": "22:30", "color": "#0891B2"},
+]
+HABIT_COLORS = ["#4F46E5", "#059669", "#D97706", "#DB2777", "#0891B2", "#7C3AED"]
+
+
+def _habits_for(doc):
+    habits = doc.get("habits")
+    if not isinstance(habits, list) or not habits:
+        return [dict(h) for h in HABIT_DEFAULTS]
+    return habits
+
+
+def _habit_track(doc):
+    track = doc.get("habit_track")
+    return track if isinstance(track, dict) else {}
+
+
+def _habit_days(today=None, n=7):
+    today = today or datetime.now().date()
+    return [(today - timedelta(days=n - 1 - i)).isoformat() for i in range(n)]
+
+
+def _habit_streak(habits, track, today=None):
+    today = today or datetime.now().date()
+    streaks = {}
+    for h in habits:
+        hid = h["id"]
+        d = today
+        if hid not in track.get(today.isoformat(), []):
+            d -= timedelta(days=1)
+        n = 0
+        while str(d.isoformat()) in track and hid in track[str(d.isoformat())]:
+            n += 1
+            d -= timedelta(days=1)
+        streaks[hid] = n
+    return streaks
+
+
+def _toggle_habit(doc, hid, day_key):
+    track = _habit_track(doc)
+    done = list(track.get(day_key) or [])
+    if hid in done:
+        done.remove(hid)
+    else:
+        done.append(hid)
+    if done:
+        track[day_key] = done
+    elif day_key in track:
+        del track[day_key]
+    doc["habit_track"] = track
 
 
 def _settings_for(doc):
@@ -859,6 +914,93 @@ def save_exams():
         doc["exam_weeks"] = weeks
         _save_doc(doc)
     return jsonify({"status": "success", "exams": weeks, "next": _next_exam(weeks)})
+
+
+@app.get("/api/habits")
+def get_habits():
+    with LOCK:
+        doc = _load_doc()
+        habits = _habits_for(doc)
+        today = datetime.now().date()
+        payload = {
+            "status": "success",
+            "habits": habits,
+            "track": _habit_track(doc),
+            "days": _habit_days(today),
+            "today": today.isoformat(),
+            "streaks": _habit_streak(habits, _habit_track(doc), today),
+        }
+    return jsonify(payload)
+
+
+@app.post("/api/habits/toggle")
+def toggle_habit():
+    body = request.get_json(silent=True) or {}
+    hid = str(body.get("id") or "")
+    day_key = str(body.get("date") or "")
+    if not hid or not day_key:
+        return jsonify({"status": "error", "message": "Habit eksik."}), 400
+    with LOCK:
+        doc = _load_doc()
+        _toggle_habit(doc, hid, day_key)
+        _save_doc(doc)
+        habits = _habits_for(doc)
+        today = datetime.now().date()
+    return jsonify({
+        "status": "success",
+        "track": _habit_track(doc),
+        "today": today.isoformat(),
+        "streaks": _habit_streak(habits, _habit_track(doc), today),
+    })
+
+
+@app.post("/api/habits/save")
+def save_habits():
+    body = request.get_json(silent=True) or {}
+    raw = body.get("habits")
+    if not isinstance(raw, list):
+        return jsonify({"status": "error", "message": "Alışkanlık listesi geçersiz."}), 400
+    with LOCK:
+        doc = _load_doc()
+        existing = _habits_for(doc)
+        by_label = {}
+        for h in existing:
+            by_label[h["label"].strip().lower()] = h
+        seen = set()
+        habits = []
+        for i, it in enumerate(raw):
+            if not isinstance(it, dict):
+                continue
+            label = str(it.get("label") or "").strip()
+            time_s = str(it.get("time") or "").strip()
+            if not label:
+                continue
+            if time_s and not re.match(r"^\d{2}:\d{2}$", time_s):
+                return jsonify({"status": "error", "message": "Saat biçimi SS:DD olmalı (örn. 16:30)."}), 400
+            key = label.lower()
+            old = by_label.get(key)
+            hid = old["id"] if old else "h%d" % (i + 1)
+            if old is None and hid in seen:
+                hid = "h%d" % (len(habits) + 100 + i)
+            seen.add(hid)
+            color = old["color"] if old else HABIT_COLORS[len(habits) % len(HABIT_COLORS)]
+            habits.append({"id": hid, "label": label, "time": time_s or "", "color": color})
+        existing_ids = {h["id"] for h in habits}
+        track = _habit_track(doc)
+        track = {date_key: [hid for hid in ids if hid in existing_ids] for date_key, ids in track.items()}
+        track = {date_key: ids for date_key, ids in track.items() if ids}
+        doc["habits"] = habits
+        doc["habit_track"] = track
+        _save_doc(doc)
+        today = datetime.now().date()
+    return jsonify({
+        "status": "success",
+        "habits": habits,
+        "track": track,
+        "days": _habit_days(today),
+        "today": today.isoformat(),
+        "streaks": _habit_streak(habits, track, today),
+    })
 
 
 @app.post("/api/plan")
