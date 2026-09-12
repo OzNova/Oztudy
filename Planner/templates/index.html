@@ -151,18 +151,8 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
 /* ============ Game card (progress + streak + badges) ============ */
 .game-card{margin-bottom:14px;background:linear-gradient(165deg,var(--surface),var(--bg));
   border:1px solid var(--border);border-radius:14px;padding:12px 14px;}
-.gc-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:9px}
-.gc-top .gc-base{display:flex;align-items:center;gap:7px;min-width:0}
-.gc-icon{width:26px;height:26px;border-radius:8px;background:var(--primary-soft);border:1px solid var(--primary-line);
-  display:flex;align-items:center;justify-content:center;color:var(--primary);flex:none}
-.gc-icon .ic{width:14px;height:14px}
-.gc-base.damaged .gc-icon{opacity:.45;filter:grayscale(.7)}
-.gc-label{font-weight:800;font-size:12.5px;color:var(--text);letter-spacing:-0.2px;white-space:nowrap}
-.gc-modules{display:flex;gap:3px}
-.gc-mod{width:7px;height:7px;border-radius:2px;background:var(--primary);opacity:.85}
-.gc-mod.dmg{background:var(--border);opacity:.4}
-.gc-streak{flex:none;font-size:10.5px;font-weight:800;color:var(--primary);padding:3px 9px;
-  background:var(--primary-soft);border:1px solid var(--primary-line);border-radius:999px;white-space:nowrap}
+.gc-streak{display:inline-block;margin-bottom:8px;font-size:11px;font-weight:800;color:var(--primary);
+  padding:3px 10px;background:var(--primary-soft);border:1px solid var(--primary-line);border-radius:999px;white-space:nowrap}
 .gc-xp{display:flex;align-items:center;gap:9px;margin-bottom:8px}
 .gc-bar{flex:1;height:6px;border-radius:999px;background:var(--border-soft);overflow:hidden;min-width:60px}
 .gc-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,#6366F1,#34D399);
@@ -488,21 +478,28 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
 
 .habits-card{padding:12px 16px;margin-top:12px}
 .habits-list{margin-top:2px}
-.habit-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--border-soft,var(--border))}
+.habit-row{display:flex;align-items:center;gap:12px;padding:8px 0;border-top:1px solid var(--border-soft,var(--border))}
 .habit-row:first-child{border-top:0}
-.hmeta{display:flex;align-items:center;gap:7px;min-width:0;flex-shrink:1}
-.hdot{width:9px;height:9px;border-radius:50%;flex:none}
+.habit-row.head{padding-bottom:3px}
+.hmeta{display:flex;align-items:center;gap:8px;min-width:0;flex-shrink:1}
+.hico{width:24px;height:24px;border-radius:8px;flex:none;display:flex;align-items:center;justify-content:center;color:#fff}
+.hico .ic{width:13px;height:13px}
 .hname{font-size:13px;font-weight:700;color:var(--text);letter-spacing:-0.1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .httime{font-size:11px;color:var(--faint);font-weight:600;white-space:nowrap}
 .hstreak{font-size:11px;font-weight:800;color:var(--primary);padding:1px 8px;background:var(--primary-soft);border:1px solid var(--primary-line);border-radius:999px;flex:none;white-space:nowrap}
-.hgrid{margin-left:auto;display:grid;grid-template-columns:repeat(7,20px);gap:4px;flex:none}
-.hk{width:20px;height:14px;font-size:9px;text-align:center;color:var(--faint);font-weight:700;line-height:14px}
-.hc{width:19px;height:19px;border-radius:50%;border:1px solid var(--border);background:transparent;padding:0;cursor:default;transition:all .12s ease}
-.hc.today{border-color:var(--faint)}
-.hc.today.clickable{outline:2px solid var(--primary-soft);cursor:pointer}
-.hc.today.clickable:hover{border-color:var(--primary-line);outline-color:var(--primary-line)}
+.hright{margin-left:auto;display:flex;align-items:center;gap:10px;flex:none}
+.hgrid{display:grid;grid-template-columns:repeat(7,20px);gap:4px}
+.hk{width:20px;height:13px;font-size:9px;text-align:center;color:var(--faint);font-weight:700;line-height:13px}
+.hk.today{color:var(--primary);font-weight:800}
+.hb{width:20px;font-size:8.5px;text-align:center;color:var(--primary);font-weight:800;letter-spacing:.2px}
+.hc{width:19px;height:19px;border-radius:50%;border:1px solid var(--border);background:transparent;display:block;transition:all .12s ease}
+.hc.today{outline:2px solid var(--primary-soft)}
 .hc.on{background:var(--primary);border-color:var(--primary)}
 .hc.today.on{outline-color:var(--primary-soft)}
+.htoday{font:600 11px var(--font);color:var(--primary);background:var(--primary-soft);border:1px solid var(--primary-line);
+  border-radius:8px;padding:6px 10px;cursor:pointer;white-space:nowrap;transition:all .12s ease;min-width:64px}
+.htoday:hover{border-color:var(--primary)}
+.htoday.on{color:var(--success);background:var(--success-soft);border-color:var(--success-line);cursor:default}
 :root[data-theme="dark"] .hc{background:transparent}
 :root[data-theme="dark"] .hc.on{background:var(--primary);border-color:var(--primary)}
 
@@ -661,6 +658,23 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
       <circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.5"/>
       <path fill="currentColor" d="M8 4v4l2.8 1.6"/>
     </symbol>
+    <symbol id="i-gym" viewBox="0 0 16 16">
+      <rect x="9.2" y="1.6" width="2" height="12.8" rx="1" fill="currentColor"/>
+      <rect x="4.8" y="1.6" width="2" height="12.8" rx="1" fill="currentColor"/>
+      <rect x="2.2" y="4.9" width="1.6" height="6.2" rx="0.8" fill="currentColor"/>
+      <rect x="12.2" y="4.9" width="1.6" height="6.2" rx="0.8" fill="currentColor"/>
+    </symbol>
+    <symbol id="i-moon" viewBox="0 0 16 16">
+      <path fill="currentColor" d="M9.4 1.8a6.2 6.2 0 1 0 4.8 9.6 5 5 0 0 1-4.8-9.6z"/>
+    </symbol>
+    <symbol id="i-book" viewBox="0 0 16 16">
+      <path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" d="M8 3.6C6.6 2.7 4.6 2.5 2.6 2.8v9.6c2-.3 4-.1 5.4.8 1.4-.9 3.4-1.1 5.4-.8V2.8c-2-.3-4-.1-5.4.8z"/>
+      <path fill="currentColor" d="M8 3.6v9.6"/>
+    </symbol>
+    <symbol id="i-flag" viewBox="0 0 16 16">
+      <path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" d="M3 14V2.5"/>
+      <path fill="currentColor" d="M3 3c2.4-1 4.4-.6 5.4 0 1.2.8 2.6.7 4.6-.3v5.6c-2 1-3.4 1.1-4.6.3-1-.6-3-1-5.4 0z"/>
+    </symbol>
   </defs>
 </svg>
 
@@ -701,14 +715,7 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
 
       <!-- Game card -->
       <div class="game-card" id="game-card">
-        <div class="gc-top">
-          <div class="gc-base" id="gc-base">
-            <span class="gc-icon"><svg class="ic"><use href="#i-gear"/></svg></span>
-            <span class="gc-label" id="gc-level">Level 1</span>
-            <span class="gc-modules" id="gc-modules"></span>
-          </div>
-          <span class="gc-streak" id="gc-streak" hidden></span>
-        </div>
+        <div class="gc-streak" id="gc-streak" hidden></div>
         <div class="gc-xp">
           <div class="gc-bar"><div class="gc-fill" id="gc-fill"></div></div>
           <span class="gc-xp-num" id="gc-xp">0 XP</span>
@@ -1306,14 +1313,6 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
     }).catch(function(){});
   }
   function renderGame(g){
-    var lv = $("gc-level"); if (lv) lv.textContent = "Level " + g.level;
-    var md = $("gc-modules");
-    if (md){
-      md.innerHTML = "";
-      for (var i = 0; i < g.base_modules; i++){
-        var m = document.createElement("span"); m.className = "gc-mod"; md.appendChild(m);
-      }
-    }
     var fl = $("gc-fill");
     if (fl) fl.style.width = Math.min(100, ((g.xp % (g.xp_next || 100)) / (g.xp_next || 100)) * 100).toFixed(1) + "%";
     var xn = $("gc-xp"); if (xn) xn.textContent = g.xp + " XP / " + g.xp_next;
@@ -1322,7 +1321,6 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
       if (g.streak > 0){ gs.textContent = g.streak + " gün seri"; gs.hidden = false; }
       else gs.hidden = true;
     }
-    var bi = $("gc-base"); if (bi) bi.classList.toggle("damaged", g.base_health === "damaged");
     var bc = $("gc-badges");
     if (bc){
       var BADGE_TR = {
@@ -2755,6 +2753,11 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
 
   var HABIT_DAY_NAMES = ["Pzr", "Pzt", "Sal", "Çar", "Prş", "Cum", "Cmt"];
   var habitState = null;
+  function habitIconHtml(h){
+    var ic = (h && h.icon) || "flag";
+    if (["gym", "moon", "book", "flag"].indexOf(ic) === -1) ic = "flag";
+    return '<svg class="ic"><use href="#i-' + ic + '"/></svg>';
+  }
   function renderHabits(data){
     var list = $("habits-list");
     if (!list) return;
@@ -2772,7 +2775,7 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
       return;
     }
     var hrow = document.createElement("div");
-    hrow.className = "habit-row";
+    hrow.className = "habit-row head";
     var hmeta = document.createElement("div");
     hmeta.className = "hmeta";
     hmeta.style.visibility = "hidden";
@@ -2781,16 +2784,23 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
     hsp.textContent = ".";
     hmeta.appendChild(hsp);
     hrow.appendChild(hmeta);
+    var hright = document.createElement("div");
+    hright.className = "hright";
     var hgrid = document.createElement("div");
     hgrid.className = "hgrid";
     days.forEach(function(ds){
       var dt = new Date(ds + "T12:00:00");
       var k = document.createElement("span");
-      k.className = "hk";
+      k.className = "hk" + (ds === today ? " today" : "");
       k.textContent = HABIT_DAY_NAMES[(dt.getDay() % 7)];
       hgrid.appendChild(k);
     });
-    hrow.appendChild(hgrid);
+    hright.appendChild(hgrid);
+    var hb = document.createElement("span");
+    hb.className = "hb";
+    hb.textContent = "Bugün";
+    hright.appendChild(hb);
+    hrow.appendChild(hright);
     list.appendChild(hrow);
 
     var doneToday = 0;
@@ -2799,13 +2809,14 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
       row.className = "habit-row";
       var meta = document.createElement("div");
       meta.className = "hmeta";
-      var dot = document.createElement("span");
-      dot.className = "hdot";
-      dot.style.background = h.color || "var(--primary)";
+      var chip = document.createElement("span");
+      chip.className = "hico";
+      chip.style.background = h.color || "var(--primary)";
+      chip.innerHTML = habitIconHtml(h);
       var nm = document.createElement("span");
       nm.className = "hname";
       nm.textContent = h.label;
-      meta.appendChild(dot);
+      meta.appendChild(chip);
       meta.appendChild(nm);
       if (h.time){
         var tm = document.createElement("span");
@@ -2818,18 +2829,16 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
       sp.textContent = (streaks[h.id] || 0) + " gün";
       meta.appendChild(sp);
       row.appendChild(meta);
+      var right = document.createElement("div");
+      right.className = "hright";
       var grid = document.createElement("div");
       grid.className = "hgrid";
+      var isTodayDone = false;
       days.forEach(function(ds){
         var on = track[ds] && track[ds].indexOf(h.id) !== -1;
-        var c = document.createElement("button");
-        c.type = "button";
+        if (ds === today && on) isTodayDone = true;
+        var c = document.createElement("span");
         c.className = "hc" + (on ? " on" : "") + (ds === today ? " today" : "");
-        if (ds === today){
-          c.classList.add("clickable");
-          c.title = "Bugünü işaretle";
-          c.addEventListener("click", function(){ toggleHabit(h.id, ds); });
-        }
         if (on){
           c.style.background = h.color || "var(--primary)";
           c.style.borderColor = h.color || "var(--primary)";
@@ -2837,11 +2846,24 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
           c.style.background = "transparent";
           c.style.borderColor = h.color || "var(--border)";
         }
-        if (ds === today && on) doneToday++;
         grid.appendChild(c);
       });
-      row.appendChild(grid);
+      right.appendChild(grid);
+      var btn = document.createElement("button");
+      btn.type = "button";
+      if (isTodayDone){
+        btn.className = "htoday on";
+        btn.textContent = "Yapıldı";
+      } else {
+        btn.className = "htoday";
+        btn.textContent = "Bugünü İşaretle";
+      }
+      btn.title = "Bugün " + h.label + " yaptığını işaretle";
+      btn.addEventListener("click", function(){ toggleHabit(h.id, today); });
+      right.appendChild(btn);
+      row.appendChild(right);
       list.appendChild(row);
+      if (isTodayDone) doneToday++;
     });
     var sub = $("habits-sub");
     if (sub) sub.textContent = "bugün " + doneToday + "/" + habits.length;
@@ -2904,6 +2926,33 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
       fillHabitsForm(d.habits);
     }).catch(function(){ setMsg("Bağlantı hatası.", "err"); });
   }
+
+  function notify(title, body){
+    if ("Notification" in window && Notification.permission === "granted"){
+      try { new Notification(title, { body: body, icon: "/static/icon-192.png" }); } catch(e){}
+    }
+  }
+  var habitNotified = {};
+  function habitReminderTick(){
+    if (!habitState || !(habitState.habits || []).length) return;
+    var now = new Date();
+    var nowMin = now.getHours() * 60 + now.getMinutes();
+    var today = localDayKey(now);
+    habitState.habits.forEach(function(h){
+      if (!h.time) return;
+      var m = h.time.match(/^(\d{2}):(\d{2})$/);
+      if (!m) return;
+      var t = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+      var done = (habitState.track[today] || []).indexOf(h.id) !== -1;
+      var key = today + "|" + h.id;
+      if (done || habitNotified[key]) return;
+      if (nowMin >= t && nowMin <= t + 30){
+        habitNotified[key] = true;
+        notify("Alışkanlık Saati", h.label + " " + h.time + " — yaptıysan bugün sütununa işaretle.");
+      }
+    });
+  }
+  setInterval(habitReminderTick, 30000);
 
   function rebuildPlanWithSettings(){
     if (!lastTopics || !lastTopics.length){
