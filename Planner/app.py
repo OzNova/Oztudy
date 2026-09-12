@@ -14,7 +14,54 @@ LOCK = threading.Lock()
 
 BREAK_MIN = 10
 
-CONF_BLOCKS = {"red": 60, "yellow": 45, "green": 30}
+DEFAULT_SETTINGS = {
+    "study_min": 45,
+    "break_min": 10,
+    "win_start": "17:00",
+    "win_end": "19:00",
+    "duration_h": 2,
+    "theme": "light",
+}
+
+
+def _settings_for(doc):
+    st = dict(DEFAULT_SETTINGS)
+    saved = doc.get("settings")
+    if isinstance(saved, dict):
+        st.update(saved)
+    try:
+        st["study_min"] = max(15, min(120, int(st["study_min"])))
+    except (TypeError, ValueError):
+        st["study_min"] = DEFAULT_SETTINGS["study_min"]
+    try:
+        st["break_min"] = max(5, min(30, int(st["break_min"])))
+    except (TypeError, ValueError):
+        st["break_min"] = DEFAULT_SETTINGS["break_min"]
+    try:
+        st["duration_h"] = max(1, min(12, int(st["duration_h"])))
+    except (TypeError, ValueError):
+        st["duration_h"] = DEFAULT_SETTINGS["duration_h"]
+    if _minutes(str(st["win_start"])) is None:
+        st["win_start"] = DEFAULT_SETTINGS["win_start"]
+    if _minutes(str(st["win_end"])) is None:
+        st["win_end"] = DEFAULT_SETTINGS["win_end"]
+    if _minutes(str(st["win_start"])) >= _minutes(str(st["win_end"])):
+        st["win_end"] = DEFAULT_SETTINGS["win_end"]
+    if str(st.get("theme")) not in ("light", "dark"):
+        st["theme"] = DEFAULT_SETTINGS["theme"]
+    return st
+
+# Fixed human study blocks: every scheduled study block is exactly 45 minutes,
+# followed by a 10 minute break between blocks. Every selected topic is placed
+# in full — nothing is shortened, scaled, queued or dropped; the timeline
+# simply extends past the Focus Window end to fit all selected topics.
+STUDY_BLOCK = 45
+STUDY_BREAK = BREAK_MIN
+
+# Spaced-review/catch-up blocks are fixed human blocks too — never below this.
+REVIEW_BLOCK = 25
+
+CONF_BLOCKS = {"red": STUDY_BLOCK, "yellow": STUDY_BLOCK, "green": STUDY_BLOCK}
 CONF_RANK = {"red": 0, "yellow": 1, "green": 2}
 CONF_TAGS = {
     "red": "Zorlanıyorum / Deep Focus",
@@ -22,9 +69,9 @@ CONF_TAGS = {
     "green": "Hakimim / Quick Review",
 }
 CONF_NOTE = {
-    "red": "60 dk derin odak + aktif hatırlama: kapat-anlat, zorlanan noktayı işaretle",
+    "red": "45 dk derin odak + aktif hatırlama: kapat-anlat, zorlanan noktayı işaretle",
     "yellow": "45 dk pratik: soru çözümü + yanlış analizi",
-    "green": "30 dk hızlı tekrar: özet tara + kavram kartları",
+    "green": "45 dk hızlı tekrar: özet tara + kavram kartları",
 }
 
 CRITERIA = {
@@ -174,11 +221,26 @@ def _stats(blocks):
 
 def _repair_plan(plan):
     for b in plan.get("blocks", []):
-        window = max(1, b.get("end", 0) - b.get("start", 0))
-        b["duration"] = window
-        b["origDuration"] = window
-        b["active"] = False
-        b.pop("started_at", None)
+        if not isinstance(b, dict):
+            continue
+        win = None
+        try:
+            win = max(1, int(b.get("end", 0)) - int(b.get("start", 0)))
+        except (TypeError, ValueError):
+            win = None
+        if not (isinstance(b.get("duration"), int) and b["duration"] >= 1):
+            b["duration"] = win if win is not None else 45
+        if not (isinstance(b.get("origDuration"), int) and b["origDuration"] >= 1):
+            b["origDuration"] = b["duration"]
+        b.setdefault("type", "study")
+        b.setdefault("status", "pending")
+        b.setdefault("subject", "")
+        b.setdefault("topic", "")
+        b.setdefault("confidence", "yellow")
+        b.setdefault("elapsed", 0)
+        b.setdefault("note", "")
+        if "active" not in b:
+            b["active"] = False
 
 
 def _upsert_weak(doc, item):
@@ -277,7 +339,8 @@ def _xp_for_level(lvl):
 
 def _level_from_xp(xp):
     lvl = 1
-    while xp >= _xp_for_level(lvl):
+    xp = max(0, min(int(xp), 10 ** 9))
+    while xp >= _xp_for_level(lvl) and lvl < 20000:
         lvl += 1
     return lvl
 
@@ -469,7 +532,7 @@ def _rollover(doc):
                 if b.get("isReview"):
                     _add_missed(doc, {
                         "subject": b["subject"], "topic": b["topic"] + " (tekrar)",
-                        "day": prev, "minutes": b.get("duration", 15),
+                        "day": prev, "minutes": b.get("duration", REVIEW_BLOCK),
                         "source": "review", "confidence": "green",
                     })
                 else:
@@ -485,7 +548,7 @@ def _rollover(doc):
             if r.get("status") == "pending" and r.get("targetDay") < today:
                 _add_missed(doc, {
                     "subject": r["subject"], "topic": r["topic"] + " (" + r.get("label", "") + ")",
-                    "day": r.get("targetDay"), "minutes": 15,
+                    "day": r.get("targetDay"), "minutes": REVIEW_BLOCK,
                     "source": "review", "confidence": "green",
                 })
         doc["plan"] = None
@@ -533,14 +596,15 @@ def _merge_scheduled(doc, plan, today):
     blocks = plan.get("blocks", [])
     cursor = max((b["end"] for b in blocks), default=_minutes(plan["input"]["start"]))
     for s in due:
-        end = cursor + int(s.get("minutes", 30))
+        mins = max(REVIEW_BLOCK, int(s.get("minutes", 30)))
+        end = cursor + mins
         blocks.append({
             "id": uuid.uuid4().hex[:12],
             "start": cursor,
             "end": end,
             "time": f"{_hhmm(cursor)}-{_hhmm(end)}",
-            "duration": int(s.get("minutes", 30)),
-            "origDuration": int(s.get("minutes", 30)),
+            "duration": mins,
+            "origDuration": mins,
             "type": "study",
             "subject": s["subject"],
             "topic": s["topic"],
@@ -575,11 +639,12 @@ def build_plan(topics, start, end, duration_h, mode, criterion):
     if e - s < 30:
         return None, "Zaman penceresi en az 30 dakika olmalı."
 
+    st = _settings_for(_load_doc())
+    study_min = st["study_min"]
+    break_min = st["break_min"]
+
     today_key = _day_key(int(time.time()))
     day_status, day_label = _day_status(today_key)
-    today_subjects, _, _ = _subjects_for_day(today_key)
-    next_key = _next_program_day(today_key)
-    tomorrow_subjects, _, _ = _subjects_for_day(next_key)
 
     # School hours 08:00-15:30 are fixed non-study blocks: on a school day,
     # push an overlapping planning window to start after school (15:30).
@@ -606,114 +671,50 @@ def build_plan(topics, start, end, duration_h, mode, criterion):
             conf = "yellow"
         items.append({"subject": str(t.get("subject")), "topic": str(t.get("topic")), "confidence": conf})
 
-    # Prioritize homework/revision for subjects taught today or the next school
-    # day (TIMETABLE values are already canonical codes), tie-broken by
-    # confidence rank (red > yellow > green).
-    today_codes = set(today_subjects)
-    tomorrow_codes = set(tomorrow_subjects)
-    for it in items:
-        code = _subject_code(it["subject"])
-        if code in today_codes:
-            it["urgency"] = 0
-        elif code in tomorrow_codes:
-            it["urgency"] = 1
-        else:
-            it["urgency"] = 2
-    items.sort(key=lambda it: (it["urgency"], CONF_RANK.get(it["confidence"], 1)))
-
-    n = len(items)
-    window = e - s
-    dst = duration_h * 60
-    break_total = BREAK_MIN * (n - 1)
-    total_base = sum(CONF_BLOCKS[it["confidence"]] for it in items)
-    required_minutes = total_base + break_total
-    MIN_BLOCK = 5
-
-    scaled = False
-    if n == 1:
-        durs = [min(total_base, dst, window)]
-        if durs[0] < total_base:
-            scaled = True
-    elif total_base + break_total <= window and total_base <= dst:
-        durs = [CONF_BLOCKS[it["confidence"]] for it in items]
-    else:
-        scaled = True
-        cap_study = min(dst, window - break_total)
-        if cap_study < MIN_BLOCK * n:
-            cap_study = min(dst, window)
-            if cap_study < MIN_BLOCK * n:
-                cap_study = MIN_BLOCK * n
-        scale = (cap_study / total_base) if total_base else 1.0
-        min_base = min(CONF_BLOCKS[it["confidence"]] for it in items)
-        if min_base * scale < MIN_BLOCK:
-            scale = min(1.0, MIN_BLOCK / min_base)
-        durs = [max(MIN_BLOCK, int(round(b * scale))) for b in (CONF_BLOCKS[it["confidence"]] for it in items)]
-        while sum(durs) > dst:
-            j = max(range(n), key=lambda k: durs[k])
-            if durs[j] <= MIN_BLOCK:
-                break
-            durs[j] -= 1
-
+    # Every selected topic is scheduled in the order the user picked them, as
+    # a fixed 45-minute block separated by 10-minute breaks. Nothing is capped,
+    # dropped, hidden or limited by the focus window: if the total duration
+    # exceeds the window, the master timeline extends past the window end.
     blocks = []
     cursor = s
-    used = 0
-    for idx, it in enumerate(items):
-        blk = durs[idx]
-        if blk:
-            if cursor + blk > e:
-                blk = max(1, e - cursor)
-            if blk:
-                blocks.append({
-                    "id": uuid.uuid4().hex[:12],
-                    "start": cursor,
-                    "end": cursor + blk,
-                    "time": f"{_hhmm(cursor)}-{_hhmm(cursor + blk)}",
-                    "duration": blk,
-                    "origDuration": blk,
-                    "type": "study",
-                    "subject": it["subject"],
-                    "topic": it["topic"],
-                    "confidence": it["confidence"],
-                    "status": "pending",
-                    "active": False,
-                    "elapsed": 0,
-                    "note": f"{CONF_NOTE[it['confidence']]} · {MODE_SUFFIX[mode]} · {CRITERION_SHORT[criterion]}",
-                })
-                used += blk
-                cursor += blk
-        if idx < n - 1:
-            nxt_blk = durs[idx + 1] if idx + 1 < n else 0
-            if blk and cursor + BREAK_MIN + nxt_blk <= e:
-                blocks.append({
-                    "id": uuid.uuid4().hex[:12],
-                    "start": cursor,
-                    "end": cursor + BREAK_MIN,
-                    "time": f"{_hhmm(cursor)}-{_hhmm(cursor + BREAK_MIN)}",
-                    "duration": BREAK_MIN,
-                    "origDuration": BREAK_MIN,
-                    "type": "break",
-                    "subject": "",
-                    "topic": "Mola",
-                    "status": "pending",
-                    "note": "Kısa mola: su + zihni boşaltma",
-                })
-                cursor += BREAK_MIN
+    for it in items:
+        if blocks:
+            blocks.append({
+                "id": uuid.uuid4().hex[:12],
+                "start": cursor,
+                "end": cursor + STUDY_BREAK,
+                "time": f"{_hhmm(cursor)}-{_hhmm(cursor + STUDY_BREAK)}",
+                "duration": STUDY_BREAK,
+                "origDuration": STUDY_BREAK,
+                "type": "break",
+                "subject": "",
+                "topic": "Mola",
+                "status": "pending",
+                "note": "Mola: su + zihni boşaltma",
+            })
+            cursor += break_min
+        cursor_end = cursor + study_min
+        blocks.append({
+            "id": uuid.uuid4().hex[:12],
+            "start": cursor,
+            "end": cursor_end,
+            "time": f"{_hhmm(cursor)}-{_hhmm(cursor_end)}",
+            "duration": study_min,
+            "origDuration": study_min,
+            "type": "study",
+            "subject": it["subject"],
+            "topic": it["topic"],
+            "confidence": it["confidence"],
+            "status": "pending",
+            "active": False,
+            "elapsed": 0,
+            "note": f"{CONF_NOTE[it['confidence']]} · {MODE_SUFFIX[mode]} · {CRITERION_SHORT[criterion]}",
+        })
+        cursor = cursor_end
 
-    scheduled = {b["topic"] for b in blocks if b["type"] == "study"}
-    dropped = [f"{it['subject']}: {it['topic']}" for it in items if it["topic"] not in scheduled]
-    note_parts = [f"{len(blocks) - sum(1 for b in blocks if b['type']=='break')} blok · {used} dk odak"]
-    if scaled:
-        note_parts.insert(0, f"⚠ {n} konu için en az {required_minutes / 60:.1f} saat gerekli — bloklar ölçeklendi")
-    if dropped:
-        note_parts.append("Sığmayan: " + ", ".join(dropped))
-    if school_clamped:
-        note_parts.append("🏫 Okul sonrasına alındı (15:30 sonrası)")
-    if day_status in ("school", "weekend") and today_subjects:
-        tsub = ", ".join(today_subjects)
-        nsub = ", ".join(tomorrow_subjects) if tomorrow_subjects else "—"
-        note_parts.append(f"📚 Bugün: {tsub} · Yarın: {nsub}")
-    if day_status == "holiday":
-        note_parts.append(f"🌤 {day_label} — tüm gün serbest")
+    placed = sum(1 for b in blocks if b["type"] == "study")
+    if not placed:
+        return None, "En az bir konu seçmelisin."
 
     plan = {
         "id": uuid.uuid4().hex[:8],
@@ -728,19 +729,12 @@ def build_plan(topics, start, end, duration_h, mode, criterion):
         },
         "blocks": blocks,
         "meta": {
-            "note": " · ".join(note_parts),
-            "dropped": dropped,
+            "note": f"{study_min} dk odak blokları · {break_min} dk molalar",
             "mode": MODE_LABELS.get(mode, mode),
             "criterion": CRITERIA[criterion],
             "school": {
                 "clamped_to_after_school": school_clamped,
                 **_school_digest(today_key),
-            },
-            "fit": {
-                "scaled": scaled,
-                "topic_count": n,
-                "required_minutes": required_minutes,
-                "required_hours": round(required_minutes / 60, 1),
             },
         },
     }
@@ -768,6 +762,26 @@ def get_plan():
 @app.get("/api/school")
 def school():
     return jsonify({"status": "success", "school": _school_digest(_day_key(int(time.time())))})
+
+
+@app.get("/api/settings")
+def get_settings():
+    return jsonify({"status": "success", "settings": _settings_for(_load_doc())})
+
+
+@app.post("/api/settings")
+def save_settings():
+    body = request.get_json(silent=True) or {}
+    with LOCK:
+        doc = _load_doc()
+        saved = dict(doc.get("settings") or {})
+        for key in ("study_min", "break_min", "win_start", "win_end", "duration_h", "theme"):
+            if key in body:
+                saved[key] = body[key]
+        doc["settings"] = saved
+        _save_doc(doc)
+        merged = _settings_for(doc)
+    return jsonify({"status": "success", "settings": merged})
 
 
 @app.post("/api/plan")
@@ -805,9 +819,11 @@ def blocks():
         doc = _load_doc()
         plan = doc.get("plan")
         if body.get("clear"):
-            doc["plan"] = None
-            _save_doc(doc)
-            return jsonify({"status": "success", "plan": None})
+            if plan is None:
+                doc["plan"] = None
+                _save_doc(doc)
+                return jsonify({"status": "success", "plan": None})
+            return jsonify({"status": "error", "message": "Mevcut plan korunur."}), 400
         if not plan:
             return jsonify({"status": "error", "message": "Blok bulunamadı."}), 404
         target = body.get("id")
@@ -895,8 +911,10 @@ def adjust():
                 block["duration"] = orig
         elif action == "extend":
             orig = int(block.get("origDuration") or block.get("duration") or 45)
-            block["duration"] = min(
-                int(block.get("duration", orig)) + 5, orig + 60
+            delta = int(body.get("delta", 5) or 5)
+            block["duration"] = max(
+                1,
+                min(int(block.get("duration", orig)) + delta, orig + 60),
             )
         elif action == "done":
             was_done = block.get("status") == "done"
@@ -1223,15 +1241,15 @@ def schedule_reviews():
         for r in pending:
             blk_id = uuid.uuid4().hex[:12]
             start = last_end
-            end = start + 15
+            end = start + REVIEW_BLOCK
             time_str = f"{_hhmm(start)}-{_hhmm(end)}"
             blocks.append({
                 "id": blk_id,
                 "start": start,
                 "end": end,
                 "time": time_str,
-                "duration": 15,
-                "origDuration": 15,
+                "duration": REVIEW_BLOCK,
+                "origDuration": REVIEW_BLOCK,
                 "type": "study",
                 "subject": r["subject"],
                 "topic": r["topic"],
@@ -1288,7 +1306,7 @@ def catchup():
                 day = _day_key(int(time.time()) + offset * 86400)
                 doc.setdefault("scheduled", []).append({
                     "subject": it["subject"], "topic": it["topic"],
-                    "day": day, "minutes": max(15, min(int(it.get("minutes") or 30), 60)),
+                    "day": day, "minutes": max(REVIEW_BLOCK, min(int(it.get("minutes") or 30), 60)),
                     "confidence": it.get("confidence", "yellow"),
                     "reason": "catchup", "created": int(time.time()),
                 })
