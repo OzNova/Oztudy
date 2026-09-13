@@ -1,6 +1,8 @@
 import json
 import os
 import re
+import sys
+import tempfile
 import threading
 import time
 import uuid
@@ -56,7 +58,7 @@ def _next_exam(weeks, today=None):
         return None
     days = (datetime.strptime(best["start"], "%Y-%m-%d").date() - today).days
     ongoing = days <= 0 and datetime.strptime(best["end"], "%Y-%m-%d").date() >= today
-    best["days_until"] = days
+    best["days_until"] = max(0, days)
     best["ongoing"] = ongoing
     return best
 
@@ -109,11 +111,31 @@ def _habit_streak(habits, track, today=None):
     streaks = {}
     for h in habits:
         hid = h["id"]
-        d = today
-        if hid not in track.get(today.isoformat(), []):
-            d -= timedelta(days=1)
+        done_days = set()
+        for day_key, ids in (track or {}).items():
+            try:
+                if hid in (ids or []):
+                    datetime.strptime(str(day_key), "%Y-%m-%d")
+                    done_days.add(str(day_key))
+            except (ValueError, TypeError):
+                continue
+        if not done_days:
+            streaks[hid] = 0
+            continue
+        latest_key = max(done_days)
+        try:
+            latest = datetime.strptime(latest_key, "%Y-%m-%d").date()
+        except ValueError:
+            streaks[hid] = 0
+            continue
+        # Ghosting fix: a streak is only alive if the most recent completion
+        # is today or yesterday. Mon+Tue done but today Fri -> 0, not 2.
+        if (today - latest).days > 1:
+            streaks[hid] = 0
+            continue
         n = 0
-        while str(d.isoformat()) in track and hid in track[str(d.isoformat())]:
+        d = latest
+        while d.isoformat() in done_days:
             n += 1
             d -= timedelta(days=1)
         streaks[hid] = n
@@ -161,28 +183,29 @@ def _settings_for(doc):
         st["theme"] = DEFAULT_SETTINGS["theme"]
     return st
 
-# Fixed human study blocks: every scheduled study block is exactly 45 minutes,
-# followed by a 10 minute break between blocks. Every selected topic is placed
-# in full — nothing is shortened, scaled, queued or dropped; the timeline
-# simply extends past the Focus Window end to fit all selected topics.
-STUDY_BLOCK = 45
-STUDY_BREAK = BREAK_MIN
+# Study blocks use the user's settings (study_min / break_min): every selected
+# topic is placed in full — nothing is shortened, scaled, queued or dropped;
+# the timeline simply extends past the Focus Window end to fit all topics.
 
 # Spaced-review/catch-up blocks are fixed human blocks too — never below this.
 REVIEW_BLOCK = 25
 
-CONF_BLOCKS = {"red": STUDY_BLOCK, "yellow": STUDY_BLOCK, "green": STUDY_BLOCK}
+CONFIDENCES = ("red", "yellow", "green")
 CONF_RANK = {"red": 0, "yellow": 1, "green": 2}
 CONF_TAGS = {
     "red": "Zorlanıyorum / Deep Focus",
     "yellow": "Orta / Practice",
     "green": "Hakimim / Quick Review",
 }
-CONF_NOTE = {
-    "red": "45 dk derin odak + aktif hatırlama: kapat-anlat, zorlanan noktayı işaretle",
-    "yellow": "45 dk pratik: soru çözümü + yanlış analizi",
-    "green": "45 dk hızlı tekrar: özet tara + kavram kartları",
-}
+
+
+def _conf_note(confidence, study_min):
+    notes = {
+        "red": "derin odak + aktif hatırlama: kapat-anlat, zorlanan noktayı işaretle",
+        "yellow": "pratik: soru çözümü + yanlış analizi",
+        "green": "hızlı tekrar: özet tara + kavram kartları",
+    }
+    return f"{study_min} dk {notes.get(confidence, notes['yellow'])}"
 
 CRITERIA = {
     "A": "Criterion A: Knowing and Understanding",
@@ -307,14 +330,51 @@ def _load_doc():
             plan["stats"] = _stats(plan.get("blocks", []))
             data["plan"] = plan
         return data
-    except (OSError, ValueError):
+    except FileNotFoundError:
+        return {}
+    except (OSError,) as exc:
+        print(f"[planner] data file unreadable ({exc}); starting with empty doc",
+              file=sys.stderr)
+        return {}
+    except ValueError as exc:
+        # Corrupt JSON (e.g. torn write from a crash). Back it up instead of
+        # silently wiping the semester's history/XP.
+        try:
+            if os.path.exists(DATA_FILE):
+                backup = DATA_FILE + ".corrupt." + datetime.now().strftime("%Y%m%d-%H%M%S")
+                os.replace(DATA_FILE, backup)
+                print(f"[planner] WARNING: corrupt planner.json backed up to {backup}: {exc}",
+                      file=sys.stderr)
+            else:
+                print(f"[planner] WARNING: corrupt planner.json: {exc}", file=sys.stderr)
+        except OSError as backup_exc:
+            print(f"[planner] WARNING: could not back up corrupt planner.json: {backup_exc}",
+                  file=sys.stderr)
         return {}
 
 
 def _save_doc(doc):
     os.makedirs(DATA_DIR, exist_ok=True)
-    with open(DATA_FILE, "w", encoding="utf-8") as fh:
-        json.dump(doc, fh, ensure_ascii=False, indent=2)
+    # Atomic write: write to a temp file on the same filesystem, then swap it
+    # in with os.replace() so a crash/power-loss can never leave a half-written
+    # planner.json behind.
+    fd, tmp_path = tempfile.mkstemp(dir=DATA_DIR, prefix="planner.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(doc, fh, ensure_ascii=False, indent=2)
+            fh.flush()
+            try:
+                os.fsync(fh.fileno())
+            except OSError:
+                pass
+        os.replace(tmp_path, DATA_FILE)
+    except BaseException:
+        try:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 def _load_plan():
@@ -330,6 +390,16 @@ def _stats(blocks):
 
 
 def _repair_plan(plan):
+    # Backfill plan identity fields for docs created before the midnight-
+    # rollover fix (plan day / created_at).
+    if not plan.get("day"):
+        created_at = plan.get("created_at")
+        try:
+            plan["day"] = _day_key(int(created_at)) if created_at else None
+        except (TypeError, ValueError):
+            plan["day"] = None
+    if not isinstance(plan.get("created_at"), int):
+        plan["created_at"] = int(time.time())
     for b in plan.get("blocks", []):
         if not isinstance(b, dict):
             continue
@@ -351,6 +421,10 @@ def _repair_plan(plan):
         b.setdefault("note", "")
         if "active" not in b:
             b["active"] = False
+        # Pre-fix done blocks already granted XP once — mark them so a future
+        # pending->done toggle does not award a second time.
+        if b.get("status") == "done" and "xp_awarded" not in b:
+            b["xp_awarded"] = True
 
 
 def _upsert_weak(doc, item):
@@ -418,6 +492,9 @@ def _log_history(doc, block):
     minutes = max(1, int(block.get("duration") or (block.get("end", 0) - block.get("start", 0)) or 1))
     q = max(0, int(block.get("questions") or 0))
     p = max(0, int(block.get("pages") or 0))
+    already_awarded = bool(block.get("xp_awarded"))
+    if not already_awarded:
+        block["xp_awarded"] = True
     hist = doc.setdefault("history", [])
     for h in hist:
         if h.get("day") == day and h.get("subject") == subj and h.get("topic") == topic:
@@ -425,6 +502,11 @@ def _log_history(doc, block):
             if q or p:
                 h["questions"] = q
                 h["pages"] = p
+            if already_awarded:
+                # History entry updated, but XP/base already granted for this
+                # block — do NOT call _game_end() again (prevents Done-toggle
+                # farming and double-XP when two blocks share a topic).
+                return
             _game_record_day(doc, day)
             _game_end(doc, block)
             return
@@ -432,6 +514,8 @@ def _log_history(doc, block):
         "day": day, "subject": subj, "topic": topic,
         "minutes": minutes, "questions": q, "pages": p, "ts": now_ts,
     })
+    if already_awarded:
+        return
     _game_record_day(doc, day)
     _game_end(doc, block)
 
@@ -493,14 +577,26 @@ def _game_end(doc, block):
         _game_build(doc)
 
 
-def _compute_streak(g):
+def _compute_streak(g, today=None):
     days = sorted(g.get("history_days", []), reverse=True)
     if not days:
+        return 0
+    today = today or datetime.now().date()
+    try:
+        latest = datetime.strptime(days[0], "%Y-%m-%d").date()
+    except ValueError:
+        return 0
+    # Ghosting fix: if the most recent active day is older than yesterday,
+    # the streak is dead — return 0 instead of the stale count.
+    if (today - latest).days > 1:
         return 0
     streak = 1
     cur = datetime.strptime(days[0], "%Y-%m-%d")
     for i in range(1, len(days)):
-        prev = datetime.strptime(days[i], "%Y-%m-%d")
+        try:
+            prev = datetime.strptime(days[i], "%Y-%m-%d")
+        except ValueError:
+            break
         if (cur - prev).days == 1:
             streak += 1
             cur = prev
@@ -641,14 +737,31 @@ def _add_missed(doc, item):
     return missed
 
 
-def _rollover(doc):
-    today = _day_key(int(time.time()))
+def _rollover(doc, now=None):
+    """Archive yesterday's leftovers and clear the active plan on day change.
+
+    Midnight grace: a study session spanning 23:30 -> 00:15 must NOT be wiped
+    the moment the clock strikes midnight. Before 04:00 we treat the previous
+    calendar day as still active and defer the rollover. The plan also carries
+    its own ``day``/``created_at`` so a plan created after midnight is never
+    mistaken for yesterday's plan.
+    """
+    now_dt = now or datetime.now()
+    today = now_dt.date().isoformat()
     prev = doc.get("day")
     if prev == today:
+        return False
+    if now_dt.hour < 4:
+        # Early-morning grace period — keep yesterday's plan alive.
         return False
     if prev:
         plan = doc.get("plan")
         if isinstance(plan, dict):
+            # A plan created today (after midnight, doc day simply stale)
+            # must survive the rollover.
+            if plan.get("day") == today:
+                doc["day"] = today
+                return True
             for b in plan.get("blocks", []):
                 if b["type"] != "study" or b.get("status") == "done":
                     continue
@@ -751,6 +864,46 @@ def _find_block(plan, bid):
     return None
 
 
+def _resize_block(plan, block, new_duration):
+    """Resize ``block`` and cascade the delta to all later blocks.
+
+    Fixes the timeline-overlap bug where "+5 min" grew ``duration`` but left
+    ``end``/``time`` stale so the extended block visually overlapped the next
+    one. Returns the applied delta (0 when nothing changed).
+    """
+    try:
+        new_duration = max(1, int(new_duration))
+    except (TypeError, ValueError):
+        return 0
+    try:
+        old_duration = int(block.get("duration") or 0)
+    except (TypeError, ValueError):
+        old_duration = 0
+    delta = new_duration - old_duration
+    if delta == 0:
+        return 0
+    block["duration"] = new_duration
+    try:
+        start = int(block.get("start") or 0)
+    except (TypeError, ValueError):
+        return delta
+    block["end"] = start + new_duration
+    block["time"] = f"{_hhmm(start)}-{_hhmm(start + new_duration)}"
+    blocks = plan.get("blocks", [])
+    try:
+        idx = next(i for i, b in enumerate(blocks) if b.get("id") == block.get("id"))
+    except StopIteration:
+        return delta
+    for later in blocks[idx + 1:]:
+        try:
+            later["start"] = int(later.get("start") or 0) + delta
+            later["end"] = int(later.get("end") or 0) + delta
+            later["time"] = f"{_hhmm(later['start'])}-{_hhmm(later['end'])}"
+        except (TypeError, ValueError):
+            continue
+    return delta
+
+
 def build_plan(topics, start, end, duration_h, mode, criterion):
     if not topics:
         return None, "En az bir konu seçmelisin."
@@ -771,9 +924,19 @@ def build_plan(topics, start, end, duration_h, mode, criterion):
 
     # School hours 08:00-15:30 are fixed non-study blocks: on a school day,
     # push an overlapping planning window to start after school (15:30).
+    # Free-gap aware: a window fully inside a free period (lunch 12:35-13:20,
+    # "Ara"/"Boş" gaps from PERIOD_SLOTS) is allowed as-is so students CAN
+    # study at lunch. Anything overlapping a teaching period is clamped.
+    # Note: sub-45-min gaps can't fit a full study_min block, which is why we
+    # don't try to pack the whole plan into scattered free periods.
     school_clamped = False
     if day_status == "school":
-        if s < SCHOOL_END and e > SCHOOL_START:
+        free_gaps = [
+            (a, b) for (a, b, label) in PERIOD_SLOTS
+            if label in ("Ara", "Boş", "Öğle Yemeği")
+        ]
+        in_free_gap = any(s >= a and e <= b and e - s >= 30 for (a, b) in free_gaps)
+        if not in_free_gap and s < SCHOOL_END and e > SCHOOL_START:
             length = e - s
             s = max(s, SCHOOL_END)
             e = min(s + length, 24 * 60 - 1)
@@ -790,14 +953,14 @@ def build_plan(topics, start, end, duration_h, mode, criterion):
     items = []
     for t in topics:
         conf = str(t.get("confidence") or "yellow")
-        if conf not in CONF_BLOCKS:
+        if conf not in CONFIDENCES:
             conf = "yellow"
         items.append({"subject": str(t.get("subject")), "topic": str(t.get("topic")), "confidence": conf})
 
     # Every selected topic is scheduled in the order the user picked them, as
-    # a fixed 45-minute block separated by 10-minute breaks. Nothing is capped,
-    # dropped, hidden or limited by the focus window: if the total duration
-    # exceeds the window, the master timeline extends past the window end.
+    # a study_min block separated by break_min breaks (both from settings).
+    # Nothing is capped, dropped, hidden or limited by the focus window: if the
+    # total duration exceeds the window, the master timeline extends past it.
     blocks = []
     cursor = s
     for it in items:
@@ -805,15 +968,15 @@ def build_plan(topics, start, end, duration_h, mode, criterion):
             blocks.append({
                 "id": uuid.uuid4().hex[:12],
                 "start": cursor,
-                "end": cursor + STUDY_BREAK,
-                "time": f"{_hhmm(cursor)}-{_hhmm(cursor + STUDY_BREAK)}",
-                "duration": STUDY_BREAK,
-                "origDuration": STUDY_BREAK,
+                "end": cursor + break_min,
+                "time": f"{_hhmm(cursor)}-{_hhmm(cursor + break_min)}",
+                "duration": break_min,
+                "origDuration": break_min,
                 "type": "break",
                 "subject": "",
                 "topic": "Mola",
                 "status": "pending",
-                "note": "Mola: su + zihni boşaltma",
+                "note": f"Mola: su + zihni boşaltma ({break_min} dk)",
             })
             cursor += break_min
         cursor_end = cursor + study_min
@@ -831,7 +994,7 @@ def build_plan(topics, start, end, duration_h, mode, criterion):
             "status": "pending",
             "active": False,
             "elapsed": 0,
-            "note": f"{CONF_NOTE[it['confidence']]} · {MODE_SUFFIX[mode]} · {CRITERION_SHORT[criterion]}",
+            "note": f"{_conf_note(it['confidence'], study_min)} · {MODE_SUFFIX[mode]} · {CRITERION_SHORT[criterion]}",
         })
         cursor = cursor_end
 
@@ -842,6 +1005,8 @@ def build_plan(topics, start, end, duration_h, mode, criterion):
     plan = {
         "id": uuid.uuid4().hex[:8],
         "created": datetime.now().strftime("%H:%M"),
+        "created_at": int(time.time()),
+        "day": today_key,
         "input": {
             "topics": items,
             "start": start,
@@ -879,7 +1044,9 @@ def index():
 
 @app.get("/api/plan")
 def get_plan():
-    return jsonify({"status": "success", "plan": _load_plan()})
+    with LOCK:
+        plan = _load_plan()
+    return jsonify({"status": "success", "plan": plan})
 
 
 @app.get("/api/school")
@@ -889,7 +1056,9 @@ def school():
 
 @app.get("/api/settings")
 def get_settings():
-    return jsonify({"status": "success", "settings": _settings_for(_load_doc())})
+    with LOCK:
+        settings = _settings_for(_load_doc())
+    return jsonify({"status": "success", "settings": settings})
 
 
 @app.post("/api/settings")
@@ -1057,6 +1226,7 @@ def make_plan():
                 _upsert_weak(doc, it)
         _merge_scheduled(doc, plan, _day_key(int(time.time())))
         doc["plan"] = plan
+        doc["day"] = plan.get("day") or _day_key(int(time.time()))
         _save_doc(doc)
     out = drawer(doc)
     out["status"] = "success"
@@ -1158,14 +1328,15 @@ def adjust():
             block.pop("elapsed", None)
             orig = block.get("origDuration")
             if isinstance(orig, int):
-                block["duration"] = orig
+                _resize_block(plan, block, orig)
         elif action == "extend":
             orig = int(block.get("origDuration") or block.get("duration") or 45)
             delta = int(body.get("delta", 5) or 5)
-            block["duration"] = max(
-                1,
-                min(int(block.get("duration", orig)) + delta, orig + 60),
-            )
+            try:
+                cur = int(block.get("duration", orig))
+            except (TypeError, ValueError):
+                cur = orig
+            _resize_block(plan, block, max(1, min(cur + delta, orig + 60)))
         elif action == "done":
             was_done = block.get("status") == "done"
             if body.get("zen_abandon"):
@@ -1257,7 +1428,8 @@ def block_metrics():
 
 @app.get("/api/stats")
 def stats():
-    doc = _load_doc()
+    with LOCK:
+        doc = _load_doc()
     now_ts = int(time.time())
     today = _day_key(now_ts)
     hist = doc.get("history", [])
@@ -1400,7 +1572,8 @@ def stats_reset():
 
 @app.get("/api/game")
 def get_game():
-    doc = _load_doc()
+    with LOCK:
+        doc = _load_doc()
     g = _game(doc)
     _check_badges(doc, g)
     lvl = _level_from_xp(int(g.get("xp", 0)))
@@ -1421,12 +1594,16 @@ def get_game():
 
 @app.get("/api/drawer")
 def get_drawer():
-    return jsonify({"status": "success", **drawer(_load_doc())})
+    with LOCK:
+        doc = _load_doc()
+    return jsonify({"status": "success", **drawer(doc)})
 
 
 @app.get("/api/weak")
 def get_weak():
-    return jsonify({"status": "success", "weak": _load_doc().get("weak", [])})
+    with LOCK:
+        doc = _load_doc()
+    return jsonify({"status": "success", "weak": doc.get("weak", [])})
 
 
 @app.post("/api/weak")
@@ -1446,7 +1623,9 @@ def weak():
 
 @app.get("/api/tomorrow")
 def get_tomorrow():
-    return jsonify({"status": "success", "tomorrow": _load_doc().get("tomorrow", [])})
+    with LOCK:
+        doc = _load_doc()
+    return jsonify({"status": "success", "tomorrow": doc.get("tomorrow", [])})
 
 
 @app.post("/api/tomorrow")
@@ -1464,7 +1643,8 @@ def tomorrow():
 
 @app.get("/api/reviews")
 def get_reviews():
-    doc = _load_doc()
+    with LOCK:
+        doc = _load_doc()
     reviews = doc.get("reviews", [])
     today = _day_key(int(time.time()))
     pending = [r for r in reviews if r.get("targetDay") == today and r.get("status") == "pending"]
@@ -1528,7 +1708,8 @@ def schedule_reviews():
 
 @app.get("/api/overdue")
 def overdue():
-    doc = _load_doc()
+    with LOCK:
+        doc = _load_doc()
     items = _gather_overdue(doc)
     return jsonify({"status": "success", "overdue": items, "count": len(items)})
 

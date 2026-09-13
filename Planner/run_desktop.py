@@ -28,6 +28,32 @@ def _log(message):
 
 
 def _free_port():
+    # Cross-platform port cleanup: prefer psutil (Windows/macOS/Linux),
+    # fall back to lsof on Unix, otherwise just continue.
+    try:
+        import psutil
+        killed = []
+        for conn in psutil.net_connections(kind="inet"):
+            try:
+                if conn.laddr and conn.laddr.port == PORT and conn.pid:
+                    killed.append(conn.pid)
+            except Exception:
+                continue
+        for pid in set(killed):
+            if pid == os.getpid():
+                continue
+            _log(f"[planner] freeing port {PORT}: {pid}")
+            try:
+                psutil.Process(pid).terminate()
+            except Exception:
+                pass
+        if killed:
+            time.sleep(1)
+        return
+    except ImportError:
+        pass
+    except Exception:
+        pass
     try:
         pids = subprocess.run(
             ["lsof", "-ti", f"tcp:{PORT}"],
@@ -84,7 +110,20 @@ if __name__ == "__main__":
         traceback.print_exc(file=sys.stderr)
         traceback.print_exc(file=log_fp)
         _log("[planner] webview unavailable — opening in the default browser")
-        subprocess.run(["open", FLASK_URL], capture_output=True)
+        try:
+            import webbrowser
+            webbrowser.open(FLASK_URL)
+        except Exception:
+            # Last-resort OS-specific openers (macOS `open`, Windows `start`).
+            try:
+                if sys.platform.startswith("win"):
+                    subprocess.run(["cmd", "/c", "start", "", FLASK_URL], capture_output=True)
+                elif sys.platform == "darwin":
+                    subprocess.run(["open", FLASK_URL], capture_output=True)
+                else:
+                    subprocess.run(["xdg-open", FLASK_URL], capture_output=True)
+            except Exception:
+                pass
 
     try:
         server.wait()

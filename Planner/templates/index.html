@@ -1153,6 +1153,61 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
     remainingSeconds: 0,
     targetEndTs: 0
   };
+  var TIMER_LS_KEY = "oztudy_timer_v1";
+  function saveTimerState(){
+    try {
+      if (!timerState.activeBlockId){ localStorage.removeItem(TIMER_LS_KEY); return; }
+      var b = (typeof findBlock === "function") ? findBlock(timerState.activeBlockId) : null;
+      localStorage.setItem(TIMER_LS_KEY, JSON.stringify({
+        blockId: timerState.activeBlockId,
+        isRunning: !!timerState.isRunning,
+        remainingSeconds: timerState.remainingSeconds || 0,
+        targetEndTs: timerState.targetEndTs || 0,
+        elapsed: b ? (b.elapsed || 0) : 0,
+        started_at: b ? (b.started_at || 0) : 0,
+        savedAt: Date.now()
+      }));
+    } catch(e){}
+  }
+  function loadTimerState(){
+    try {
+      var raw = localStorage.getItem(TIMER_LS_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch(e){ return null; }
+  }
+  function clearTimerState(){
+    try { localStorage.removeItem(TIMER_LS_KEY); } catch(e){}
+  }
+  function restoreTimerState(){
+    var saved = loadTimerState();
+    if (!saved || !saved.blockId) return;
+    // Drop stale saves (>12h) — prevents resurrecting yesterday's timer.
+    if (saved.savedAt && (Date.now() - saved.savedAt) > 12 * 3600 * 1000){ clearTimerState(); return; }
+    var b = (typeof findBlock === "function") ? findBlock(saved.blockId) : null;
+    if (!b || b.status === "done" || b.status === "pushed"){ clearTimerState(); return; }
+    if (typeof saved.elapsed === "number" && saved.elapsed > 0 && !(b.elapsed > 0)) b.elapsed = saved.elapsed;
+    if (saved.started_at && !b.started_at && saved.isRunning) b.started_at = saved.started_at;
+    timerState.activeBlockId = b.id;
+    renderAnchorId = b.id;
+    if (saved.isRunning && saved.targetEndTs){
+      var remaining = Math.max(0, Math.round((saved.targetEndTs - Date.now()) / 1000));
+      // If the timer expired while away, clamp to 0 — tickTimer will fire completion.
+      timerState.remainingSeconds = remaining;
+      timerState.targetEndTs = remaining > 0 ? saved.targetEndTs : 0;
+      timerState.isRunning = remaining > 0;
+      if (remaining <= 0) timerState.remainingSeconds = 0;
+    } else {
+      timerState.isRunning = false;
+      timerState.targetEndTs = 0;
+      timerState.remainingSeconds = Math.max(0, Math.round(blockSeconds(b) - (b.elapsed || 0)));
+    }
+    if (typeof moveTimerPanelTo === "function") moveTimerPanelTo(b);
+    if (typeof applyCardState === "function") applyCardState(b);
+    if (timerState.isRunning) startBlockTimer(b.id);
+    else if (typeof writeTimer === "function") writeTimer(b, timerState.remainingSeconds);
+  }
+  window.addEventListener("beforeunload", saveTimerState);
+  document.addEventListener("visibilitychange", function(){ if (document.hidden) saveTimerState(); });
   var renderAnchorId = null;
   var audioCtx = null;
   var completionFired = false;
@@ -1198,7 +1253,8 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
   function notifyComplete(block){
     var title = "Mola Zamanı";
     var who = (block.subject ? block.subject + " · " : "") + block.topic;
-    var body = "Time for a break! " + who + " seansı tamamlandı. 10 dk dinlen.";
+    var breakMin = (appSettings && appSettings.break_min) || 10;
+    var body = "Time for a break! " + who + " seansı tamamlandı. " + breakMin + " dk dinlen.";
     if ("Notification" in window && Notification.permission === "granted"){
       try { new Notification(title, { body: body, icon: "/static/icon-192.png" }); } catch(e){}
     }
@@ -1894,6 +1950,7 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
     enterZenMode(b);
     updateStats();
     startBlockTimer(b.id);
+    saveTimerState();
     syncTimer(b, "start");
   }
 
@@ -1913,6 +1970,7 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
     applyCardState(b);
     exitZenMode();
     updateStats();
+    saveTimerState();
     syncTimer(b, "stop");
   }
 
@@ -1931,6 +1989,7 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
       timerState.activeBlockId = null;
       renderAnchorId = null;
     }
+    clearTimerState();
     applyCardState(b);
     var old = document.querySelector(".timer-panel");
     if (old && old.closest('.pblock[data-bid="' + b.id + '"]')) old.remove();
@@ -1993,7 +2052,11 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
       e.className = "empty";
       e.innerHTML = "<b>Henüz plan yok</b>Soldan konuları seç ve \u201cPlanı Oluştur\u201d.";
       tl.appendChild(e);
-      $("tl-note").textContent = "45 dk odak blokları · 10 dk molalar";
+      if (appSettings && appSettings.study_min && appSettings.break_min){
+        $("tl-note").textContent = appSettings.study_min + " dk odak blokları · " + appSettings.break_min + " dk molalar";
+      } else {
+        $("tl-note").textContent = "45 dk odak blokları · 10 dk molalar";
+      }
       return;
     }
     $("tl-note").textContent = plan.meta.note;
@@ -2153,6 +2216,9 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
       timerState.remainingSeconds = Math.max(0, Math.round((timerState.targetEndTs - Date.now()) / 1000));
     }
     writeTimer(b, timerState.remainingSeconds);
+    // Persist every 5s so a crash resumes close to where it left off
+    // (plus beforeunload/visibilitychange for the exact moment of exit).
+    if (timerState.remainingSeconds % 5 === 0) saveTimerState();
     if (timerState.remainingSeconds <= 0 && !completionFired){
       clearBlockTimer(id);
       onTimerComplete(b);
@@ -2608,6 +2674,7 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
     if (completionFired) return;
     completionFired = true;
     clearBlockTimer(block.id);
+    clearTimerState();
     playChime();
     notifyComplete(block);
     if (zenActive){
@@ -3150,8 +3217,8 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
   }
   document.body.addEventListener("click", function(){ ensureAudio(); });
   fetch("/api/plan").then(function(r){ return r.json(); }).then(function(d){
-    if (d.status === "success") renderPlan(d.plan);
-  }).catch(function(){});
+    if (d.status === "success"){ renderPlan(d.plan); restoreTimerState(); }
+  }).catch(function(){ try { restoreTimerState(); } catch(e){} });
   fetchDrawer();
   fetchReviews();
   fetchOverdue();
