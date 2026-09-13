@@ -24,7 +24,7 @@ from utils import REVIEW_BLOCK, _day_key, _minutes
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
 
-DATA_DIR = os.path.join(ROOT, "userData")
+DATA_DIR = os.environ.get("OZTUDY_DATA_DIR", os.path.join(ROOT, "userData"))
 
 
 DATA_FILE = os.path.join(DATA_DIR, "planner.json")

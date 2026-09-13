@@ -3,6 +3,36 @@
 A daily academic planner for IB MYP Year 4 (Grade 9), packaged as a native
 macOS desktop app with a lightweight Flask + vanilla JS/CSS frontend (`tr` UI).
 
+## Install
+
+Requires Python 3.
+
+### Homebrew (macOS)
+
+```bash
+brew install --formula https://raw.githubusercontent.com/OzNova/Oztudy/main/Formula/oztudy.rb
+oztudy
+```
+
+This installs a self-contained virtualenv plus an `oztudy` launcher. Your data
+lives in `~/.oztudy` (override with the `OZTUDY_DATA_DIR` environment variable).
+See [CHANGELOG](CHANGELOG.md) for what's in each release.
+
+### Manual
+
+```bash
+# 1. dependencies
+pip install -r Planner/requirements.txt       # flask + psutil
+pip install pywebview                          # optional, for the native window
+
+# 2. run in your browser
+python3 Planner/app.py                         # http://127.0.0.1:5000
+
+# 3. or run as a desktop app (macOS)
+python3 Planner/run_desktop.py
+#    (double-click Planner/Daily Planner.command also works)
+```
+
 ## Features
 
 - **IB MYP curriculum topics** — subject and topic picker organized around the
@@ -29,25 +59,17 @@ macOS desktop app with a lightweight Flask + vanilla JS/CSS frontend (`tr` UI).
 ## Tech stack
 
 - **Backend:** Python 3 + Flask
-- **Frontend:** single-file HTML/CSS/JS (no build step, Inter font, SVG icons)
+- **Frontend:** HTML shell + separate CSS/JS (`templates/index.html`,
+  `static/app.js`, `static/style.css`; no build step, Inter font, SVG icons)
 - **Desktop shell:** pywebview (macOS WKWebView), with automatic browser fallback
-- **Storage:** JSON data file (`Planner/userData/planner.json`)
+- **Storage:** SQLite (`planner.db`, WAL mode) with one-time JSON migration
 
 ## Getting started
 
-Requires Python 3.
-
 ```bash
-# 1. dependencies
-pip install -r Planner/requirements.txt       # flask only
-pip install pywebview                          # optional, for the native window
-
-# 2. run in your browser
-python3 Planner/app.py                         # http://127.0.0.1:5000
-
-# 3. or run as a desktop app (macOS)
-python3 Planner/run_desktop.py
-#    (double-click Planner/Daily Planner.command also works)
+# check your installed version any time
+python3 Planner/run_desktop.py --version
+# or open http://127.0.0.1:5000/api/version while the app runs
 ```
 
 The launcher frees port 5000 automatically before starting, writes logs to
@@ -57,21 +79,39 @@ unavailable.
 ## Data
 
 User data (plan, timer state, XP, settings, statistics) is stored locally in
-`Planner/userData/planner.json`. It is created on first run and is not part of
-the repository.
+SQLite (`Planner/userData/planner.db`, or `$OZTUDY_DATA_DIR` when set). On
+first run after upgrading from an older version, the legacy
+`planner.json` — if present — is migrated automatically and archived as
+`planner.json.migrated.*`. The data directory is created on first run and is
+not part of the repository.
 
 ## Project layout
 
 ```
 Planner/
   app.py                        Flask backend (API + template rendering)
-  templates/index.html          entire frontend (single page)
+  utils.py / school.py          time helpers; timetable, calendar, exams
+  gamification.py               XP, badges, streaks, habits
+  scheduler.py                  plan builder, catch-up, timeline ops
+  storage.py                    SQLite store + JSON migration + rollover
+  version.py                    release version (single source of truth)
+  templates/index.html          page shell (loads static/app.js + style.css)
+  static/app.js / style.css     frontend logic and styles
   static/                       icons and PWA assets
-  run_desktop.py                pywebview launcher
+  run_desktop.py                pywebview launcher (oztudy entry point)
   Daily Planner.command         double-click launcher entry point
   requirements.txt              python dependencies
-  setup.py                      py2app packaging config
+  setup.py                      py2app packaging config (reads version.py)
+Formula/oztudy.rb               Homebrew formula
+CHANGELOG.md                    release notes (Keep a Changelog)
 ```
+
+## Versioning
+
+Releases follow [Semantic Versioning](https://semver.org). The version in
+`Planner/version.py` is shown in the app header and served at
+`/api/version`. User-facing changes for every release are listed in
+[CHANGELOG.md](CHANGELOG.md).
 
 ## License
 

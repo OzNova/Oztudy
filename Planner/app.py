@@ -37,6 +37,7 @@ from scheduler import (
 from school import _exams_for, _next_exam, _school_digest
 from storage import LOCK, _load_doc, _load_plan, _repair_plan, _rollover, _save_doc, _settings_for
 from utils import _day_key, _hhmm, _minutes, _now_min, _weekday_short
+from version import __version__
 
 
 app = Flask(__name__)
@@ -45,6 +46,11 @@ app = Flask(__name__)
 @app.get("/")
 def index():
     return render_template("index.html")
+
+
+@app.get("/api/version")
+def version():
+    return jsonify({"status": "success", "name": "Oztudy", "version": __version__})
 
 
 @app.get("/api/plan")

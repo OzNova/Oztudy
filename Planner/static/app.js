@@ -171,6 +171,14 @@
       if (d.status === "success"){ renderSchool(d.school); renderWeekend(d.school); }
     }).catch(function(){});
   }
+  function fetchVersion(){
+    fetch("/api/version").then(function(r){ return r.json(); }).then(function(d){
+      if (d.status === "success" && d.version){
+        var el = $("nav-ver");
+        if (el) el.textContent = "v" + d.version;
+      }
+    }).catch(function(){});
+  }
   function renderSchool(s){
     var ss = $("school-strip");
     if (!ss){ return; }
@@ -2093,6 +2101,7 @@
   fetchOverdue();
   fetchGame();
   fetchSchool();
+  fetchVersion();
   loadSettings();
   loadExams();
   loadHabits();

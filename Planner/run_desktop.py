@@ -19,6 +19,11 @@ FLASK_URL = "http://127.0.0.1:5000"
 PORT = 5000
 LOG_FILE = os.path.join(BASE_DIR, "error.log")
 
+try:
+    from version import __version__ as APP_VERSION
+except ImportError:
+    APP_VERSION = "unknown"
+
 log_fp = open(LOG_FILE, "a", buffering=1)
 
 
@@ -83,9 +88,13 @@ def _server_ready(attempts=60, delay=0.25):
 
 
 if __name__ == "__main__":
+    if "--version" in sys.argv:
+        print(APP_VERSION)
+        sys.exit(0)
+
     _free_port()
 
-    _log(f"[planner] starting {APP_PY} on 127.0.0.1:{PORT}")
+    _log(f"[planner] Oztudy v{APP_VERSION} starting {APP_PY} on 127.0.0.1:{PORT}")
     server = subprocess.Popen(
         [sys.executable, APP_PY],
         stdout=log_fp, stderr=log_fp, cwd=BASE_DIR,
