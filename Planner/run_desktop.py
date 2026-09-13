@@ -17,19 +17,33 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 APP_PY = os.path.join(BASE_DIR, "app.py")
 FLASK_URL = "http://127.0.0.1:5000"
 PORT = 5000
-LOG_FILE = os.path.join(BASE_DIR, "error.log")
+# Logs follow the data directory when overridden (e.g. Homebrew installs keep
+# everything under OZTUDY_DATA_DIR instead of the read-only Cellar).
+LOG_DIR = os.environ.get("OZTUDY_DATA_DIR", BASE_DIR)
+LOG_FILE = os.path.join(LOG_DIR, "error.log")
 
 try:
     from version import __version__ as APP_VERSION
 except ImportError:
     APP_VERSION = "unknown"
 
-log_fp = open(LOG_FILE, "a", buffering=1)
+log_fp = None
 
 
 def _log(message):
     print(message, file=sys.stderr)
-    print(message, file=log_fp)
+    if log_fp is not None:
+        print(message, file=log_fp)
+
+
+def _open_log():
+    global log_fp
+    try:
+        if LOG_DIR != BASE_DIR:
+            os.makedirs(LOG_DIR, exist_ok=True)
+        log_fp = open(LOG_FILE, "a", buffering=1)
+    except OSError as exc:
+        print(f"[planner] cannot open log file {LOG_FILE}: {exc}", file=sys.stderr)
 
 
 def _free_port():
@@ -92,6 +106,7 @@ if __name__ == "__main__":
         print(APP_VERSION)
         sys.exit(0)
 
+    _open_log()
     _free_port()
 
     _log(f"[planner] Oztudy v{APP_VERSION} starting {APP_PY} on 127.0.0.1:{PORT}")
@@ -117,7 +132,8 @@ if __name__ == "__main__":
         webview.start()
     except Exception:
         traceback.print_exc(file=sys.stderr)
-        traceback.print_exc(file=log_fp)
+        if log_fp is not None:
+            traceback.print_exc(file=log_fp)
         _log("[planner] webview unavailable — opening in the default browser")
         try:
             import webbrowser

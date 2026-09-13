@@ -73,8 +73,8 @@ python3 Planner/run_desktop.py --version
 ```
 
 The launcher frees port 5000 automatically before starting, writes logs to
-`Planner/error.log`, and falls back to the default browser if pywebview is
-unavailable.
+`error.log` (next to the app, or inside `OZTUDY_DATA_DIR` when set), and falls
+back to the default browser if pywebview is unavailable.
 
 ## Data
 

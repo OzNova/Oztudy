@@ -9,6 +9,17 @@ surfaced in the app header, `GET /api/version`, and `run_desktop.py --version`.
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-09-13
+
+### Fixed
+
+- Launcher no longer crashes when its directory is not writable (e.g. the
+  Homebrew Cellar or its sandbox): the log file is opened lazily — after
+  `--version` is handled — and logging degrades to stderr when the file
+  cannot be opened.
+- Launcher logs follow `OZTUDY_DATA_DIR` when it is set, so Homebrew installs
+  keep `error.log` next to the data in `~/.oztudy` instead of the Cellar.
+
 ## [1.0.0] - 2026-09-13
 
 First packaged release: Homebrew install, versioning, and changelog.
@@ -65,5 +76,6 @@ First packaged release: Homebrew install, versioning, and changelog.
 - `requirements.txt` gains `psutil` for cross-platform port management.
 - README documents Homebrew install, data layout, and project structure.
 
-[Unreleased]: https://github.com/OzNova/Oztudy/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/OzNova/Oztudy/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/OzNova/Oztudy/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/OzNova/Oztudy/releases/tag/v1.0.0
