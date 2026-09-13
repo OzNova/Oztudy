@@ -9,6 +9,15 @@ surfaced in the app header, `GET /api/version`, and `run_desktop.py --version`.
 
 ## [Unreleased]
 
+### Changed
+
+- Homebrew distribution moved to the
+  [homebrew-oztudy tap](https://github.com/OzNova/homebrew-oztudy)
+  (`brew tap OzNova/oztudy && brew install oztudy`); the in-repo
+  `Formula/oztudy.rb` was removed to avoid drift. Note: Homebrew 6+ requires
+  formulae to live in a tap, and third-party taps need a one-time
+  `brew trust oznova/oztudy`.
+
 ## [1.0.1] - 2026-09-13
 
 ### Fixed

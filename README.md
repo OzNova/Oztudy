@@ -10,7 +10,9 @@ Requires Python 3.
 ### Homebrew (macOS)
 
 ```bash
-brew install --formula https://raw.githubusercontent.com/OzNova/Oztudy/main/Formula/oztudy.rb
+brew trust oznova/oztudy   # one-time: third-party taps need explicit trust
+brew tap OzNova/oztudy
+brew install oztudy
 oztudy
 ```
 
@@ -102,9 +104,10 @@ Planner/
   Daily Planner.command         double-click launcher entry point
   requirements.txt              python dependencies
   setup.py                      py2app packaging config (reads version.py)
-Formula/oztudy.rb               Homebrew formula
-CHANGELOG.md                    release notes (Keep a Changelog)
+  CHANGELOG.md                    release notes (Keep a Changelog)
 ```
+The Homebrew formula lives in the [homebrew-oztudy tap](https://github.com/OzNova/homebrew-oztudy)
+and is updated on each release (see its README for the maintainer checklist).
 
 ## Versioning
 
