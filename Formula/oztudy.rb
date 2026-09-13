@@ -4,7 +4,7 @@ class Oztudy < Formula
   desc "Daily academic planner for IB MYP (Flask desktop app)"
   homepage "https://github.com/OzNova/Oztudy"
   url "https://github.com/OzNova/Oztudy/archive/refs/tags/v1.0.0.tar.gz"
-  sha256 "REPLACE_WITH_TARBALL_SHA256_AFTER_TAG_PUSH"
+  sha256 "a43e443276ace31b376eefeb189def7b95c1c2c4a6ce60b745964c05c51916c6"
   license "MIT"
 
   depends_on "python@3.13"
