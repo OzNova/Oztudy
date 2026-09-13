@@ -9,6 +9,13 @@ surfaced in the app header, `GET /api/version`, and `run_desktop.py --version`.
 
 ## [Unreleased]
 
+### Added
+
+- Study report (`Rapor` tab + `GET /api/report?range=week|month|all`):
+  total hours, sessions, questions, pages, daily average, consistency,
+  streak, best day, top subject/level, daily activity chart, subject
+  distribution, top-8 topics, and a print stylesheet for Yazdır/PDF export.
+
 ### Changed
 
 - Homebrew distribution moved to the

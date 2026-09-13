@@ -111,6 +111,7 @@
       <b id="st-pct">0%</b>
     </div>
     <button type="button" class="nav-stat-btn" id="tab-stat"><svg class="ic"><use href="#i-chart"/></svg>İstatistikler</button>
+    <button type="button" class="nav-stat-btn" id="tab-report"><svg class="ic"><use href="#i-book"/></svg>Rapor</button>
     <button type="button" class="nav-stat-btn" id="tab-settings"><svg class="ic"><use href="#i-gear"/></svg>Ayarlar</button>
     <span class="streak" id="streak">0 Günlük Seri</span>
   </div>
@@ -444,6 +445,83 @@
             <div class="day-grid" id="st-day-bars"></div>
           </div>
         </div>
+      </div>
+
+      <!-- Report panel (hidden by default) -->
+      <div class="stats-panel" id="report-panel" hidden>
+        <div class="stats-panel-head">
+          <h2>Çalışma Raporu</h2>
+          <span class="t" id="rp-range-title">bu hafta</span>
+          <div class="rp-pills rp-no-print" id="rp-pills">
+            <button type="button" class="rp-pill active" data-range="week">Bu Hafta</button>
+            <button type="button" class="rp-pill" data-range="month">Son 30 Gün</button>
+            <button type="button" class="rp-pill" data-range="all">Tüm Zamanlar</button>
+          </div>
+          <button type="button" class="stats-collapse rp-no-print" id="report-print"><svg class="ic"><use href="#i-book"/></svg>Yazdır / PDF</button>
+          <button type="button" class="stats-collapse rp-no-print" id="report-collapse"><svg class="ic"><use href="#i-up"/></svg>Gizle</button>
+        </div>
+        <div class="stat-cards">
+          <div class="stat-card">
+            <span class="s-label">Toplam Süre</span>
+            <b id="rp-hours">0 dk</b>
+            <span class="s-sub" id="rp-hours-sub">0 aktif gün</span>
+          </div>
+          <div class="stat-card">
+            <span class="s-label">Seans</span>
+            <b id="rp-sessions">0</b>
+            <span class="s-sub" id="rp-sessions-sub">tamamlanan blok</span>
+          </div>
+          <div class="stat-card">
+            <span class="s-label">Çözülen Soru</span>
+            <b id="rp-questions">0</b>
+            <span class="s-sub" id="rp-questions-sub">0 sayfa okuma</span>
+          </div>
+          <div class="stat-card">
+            <span class="s-label">Günlük Ortalama</span>
+            <b id="rp-avg">0 dk</b>
+            <span class="s-sub">aktif gün başına</span>
+          </div>
+          <div class="stat-card">
+            <span class="s-label">Tutarlılık</span>
+            <b id="rp-cons">%0</b>
+            <span class="s-sub" id="rp-cons-sub">0/0 gün</span>
+          </div>
+          <div class="stat-card">
+            <span class="s-label">Günlük Seri</span>
+            <b id="rp-streak">0</b>
+            <span class="s-sub" id="rp-streak-sub">gün üst üste</span>
+          </div>
+        </div>
+        <div class="stat-cards">
+          <div class="stat-card">
+            <span class="s-label">En Verimli Gün</span>
+            <b id="rp-best">—</b>
+            <span class="s-sub" id="rp-best-sub">henüz veri yok</span>
+          </div>
+          <div class="stat-card">
+            <span class="s-label">En Çok Çalışılan Ders</span>
+            <b id="rp-topsubj">—</b>
+            <span class="s-sub" id="rp-topsubj-sub">henüz veri yok</span>
+          </div>
+          <div class="stat-card">
+            <span class="s-label">Seviye</span>
+            <b id="rp-level">Sv. 1</b>
+            <span class="s-sub" id="rp-level-sub">0 XP</span>
+          </div>
+        </div>
+        <div class="stats-cols">
+          <div>
+            <div class="chart-title">Günlük Aktivite <span class="t" id="rp-days-sub">dk · S soru · P sayfa</span></div>
+            <div class="day-grid" id="rp-day-bars"></div>
+          </div>
+          <div>
+            <div class="chart-title">Ders Dağılımı <span class="t">süre payı</span></div>
+            <div id="rp-subject-bars"></div>
+          </div>
+        </div>
+        <div class="chart-title">En Çok Çalışılan Konular <span class="t">ilk 8 · süreye göre</span></div>
+        <div id="rp-topics"></div>
+        <div class="empty" id="rp-empty" hidden><b>Henüz veri yok</b>İlk bloğu tamamladığında raporun burada oluşur.</div>
       </div>
 
       <!-- Settings panel (hidden by default) -->

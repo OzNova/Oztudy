@@ -1307,15 +1307,22 @@
   }
 
   function switchTab(pane){
-    var tw = $("tab-wiz"), ts = $("tab-stat"), ts2 = $("tab-settings");
+    var tw = $("tab-wiz"), ts = $("tab-stat"), tr = $("tab-report"), ts2 = $("tab-settings");
     if (tw) tw.classList.toggle("active", pane === "wiz");
     if (ts) ts.classList.toggle("active", pane === "stat");
+    if (tr) tr.classList.toggle("active", pane === "report");
     if (ts2) ts2.classList.toggle("active", pane === "settings");
     var an = $("analytics-panel");
     if (an){
       an.hidden = pane !== "stat";
       an.classList.toggle("show", pane === "stat");
       if (pane === "stat" && an.hidden === false) an.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+    var rp = $("report-panel");
+    if (rp){
+      rp.hidden = pane !== "report";
+      rp.classList.toggle("show", pane === "report");
+      if (pane === "report" && rp.hidden === false) rp.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
     var sp = $("settings-panel");
     if (sp){
@@ -1324,10 +1331,11 @@
       if (pane === "settings" && sp.hidden === false) sp.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
     if (pane === "stat") fetchStats();
+    if (pane === "report") fetchReport();
   }
 
-  function renderSubjectBars(subjects){
-    var box = $("st-subject-bars");
+  function renderSubjectBars(subjects, boxId){
+    var box = $(boxId || "st-subject-bars");
     box.innerHTML = "";
     if (!subjects || !subjects.length){
       box.innerHTML = "<div class='empty' style='padding:16px 10px;font-size:13px'><b>Veri yok</b>İlk bloğu tamamladığında dağılım burada görünür.</div>";
@@ -1357,8 +1365,8 @@
     });
   }
 
-  function renderDayBars(days){
-    var box = $("st-day-bars");
+  function renderDayBars(days, boxId, withTitle){
+    var box = $(boxId || "st-day-bars");
     box.innerHTML = "";
     if (!days || !days.length) return;
     var max = 1;
@@ -1366,6 +1374,7 @@
     days.forEach(function(x){
       var col = document.createElement("div");
       col.className = "day-col";
+      if (withTitle) col.title = (x.date || "") + " · " + fmtMinTotal(x.minutes);
       var fill = document.createElement("div");
       fill.className = "day-fill";
       fill.style.height = Math.max(3, (x.minutes / max) * 100) + "%";
@@ -1392,6 +1401,8 @@
   function refreshStats(){
     var an = $("analytics-panel");
     if (an && !an.hidden) fetchStats();
+    var rp = $("report-panel");
+    if (rp && !rp.hidden) fetchReport();
   }
 
   function fetchStats(){
@@ -1405,6 +1416,67 @@
       $("st-qsub").textContent = d.week.pages + " okuma sayfası";
       renderSubjectBars(d.subjects);
       renderDayBars(d.days);
+    }).catch(function(){});
+  }
+
+  var reportRange = "week";
+
+  function renderReportTopics(topics){
+    var box = $("rp-topics");
+    box.innerHTML = "";
+    if (!topics || !topics.length){
+      box.innerHTML = "<div class='empty' style='padding:10px 2px;font-size:12px'>Konu kaydı yok.</div>";
+      return;
+    }
+    topics.forEach(function(t, i){
+      var row = document.createElement("div");
+      row.className = "rp-topic";
+      var rk = document.createElement("span");
+      rk.className = "rp-rank";
+      rk.textContent = String(i + 1);
+      var tt = document.createElement("span");
+      tt.className = "rp-tt";
+      var chip = document.createElement("span");
+      chip.className = "rp-ts";
+      chip.textContent = t.subject;
+      tt.appendChild(chip);
+      tt.appendChild(document.createTextNode(t.topic));
+      var tm = document.createElement("span");
+      tm.className = "rp-tm";
+      tm.textContent = fmtMinTotal(t.minutes) + " · " + t.sessions + " seans";
+      row.appendChild(rk);
+      row.appendChild(tt);
+      row.appendChild(tm);
+      box.appendChild(row);
+    });
+  }
+
+  function fetchReport(){
+    fetch("/api/report?range=" + encodeURIComponent(reportRange)).then(function(r){ return r.json(); }).then(function(d){
+      if (d.status !== "success") return;
+      $("rp-range-title").textContent = d.range.title;
+      $("rp-hours").textContent = fmtMinTotal(d.totals.minutes);
+      $("rp-hours-sub").textContent = d.range.days_active + " aktif gün / " + d.range.days_total + " gün";
+      $("rp-sessions").textContent = d.totals.sessions;
+      $("rp-sessions-sub").textContent = d.totals.questions + " soru · " + d.totals.pages + " sayfa";
+      $("rp-questions").textContent = d.totals.questions;
+      $("rp-questions-sub").textContent = d.totals.pages + " sayfa okuma";
+      $("rp-avg").textContent = fmtMinTotal(d.totals.avg_minutes);
+      $("rp-cons").textContent = "%" + d.highlights.consistency;
+      $("rp-cons-sub").textContent = d.range.days_active + "/" + d.range.days_total + " gün";
+      $("rp-streak").textContent = d.highlights.streak;
+      var best = d.highlights.best_day;
+      $("rp-best").textContent = best ? best.label + " · " + fmtMinTotal(best.minutes) : "—";
+      $("rp-best-sub").textContent = best ? best.date : "henüz veri yok";
+      var top = d.highlights.top_subject;
+      $("rp-topsubj").textContent = top ? top.subject : "—";
+      $("rp-topsubj-sub").textContent = top ? fmtMinTotal(top.minutes) + " · %" + top.percent : "henüz veri yok";
+      $("rp-level").textContent = "Sv. " + d.highlights.level;
+      $("rp-level-sub").textContent = d.highlights.xp + " XP · " + d.highlights.badges.length + " rozet";
+      renderDayBars(d.days, "rp-day-bars", true);
+      renderSubjectBars(d.subjects, "rp-subject-bars");
+      renderReportTopics(d.topics);
+      $("rp-empty").hidden = d.totals.sessions > 0;
     }).catch(function(){});
   }
 
@@ -1955,6 +2027,20 @@
   var _tabW = $("tab-wiz"), _tabS = $("tab-stat");
   if (_tabW) _tabW.addEventListener("click", function(){ switchTab("wiz"); });
   if (_tabS) _tabS.addEventListener("click", function(){ switchTab("stat"); });
+  var _tabR = $("tab-report");
+  if (_tabR) _tabR.addEventListener("click", function(){ switchTab("report"); });
+  var _rc = $("report-collapse");
+  if (_rc) _rc.addEventListener("click", function(){ switchTab("wiz"); });
+  var _rpr = $("report-print");
+  if (_rpr) _rpr.addEventListener("click", function(){ window.print(); });
+  Array.prototype.forEach.call(document.querySelectorAll("#rp-pills .rp-pill"), function(p){
+    p.addEventListener("click", function(){
+      Array.prototype.forEach.call(document.querySelectorAll("#rp-pills .rp-pill"), function(q){ q.classList.remove("active"); });
+      p.classList.add("active");
+      reportRange = p.getAttribute("data-range") || "week";
+      fetchReport();
+    });
+  });
   var _tabSet = $("tab-settings");
   if (_tabSet) _tabSet.addEventListener("click", function(){ switchTab("settings"); });
   var _setClose = $("settings-close");

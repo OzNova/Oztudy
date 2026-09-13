@@ -581,6 +581,216 @@ def stats_reset():
     return jsonify({"status": "success"})
 
 
+_TR_MONTHS_SHORT = ["Oca", "Şub", "Mar", "Nis", "May", "Haz",
+                    "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"]
+
+
+def _tr_date(dt):
+    return f"{dt.day} {_TR_MONTHS_SHORT[dt.month - 1]}"
+
+
+@app.get("/api/report")
+def report():
+    rng = (request.args.get("range") or "week").lower()
+    if rng not in ("week", "month", "all"):
+        rng = "week"
+    with LOCK:
+        doc = _load_doc()
+    now_ts = int(time.time())
+    today = _day_key(now_ts)
+    today_dt = datetime.fromtimestamp(now_ts)
+    hist = doc.get("history", [])
+
+    if rng == "week":
+        monday = today_dt - timedelta(days=today_dt.weekday())
+        day_from = monday.strftime("%Y-%m-%d")
+        day_to = today
+        day_keys = [(monday + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(7)]
+    elif rng == "month":
+        start = today_dt - timedelta(days=29)
+        day_from = start.strftime("%Y-%m-%d")
+        day_to = today
+        day_keys = [(start + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(30)]
+    else:
+        known = sorted({h.get("day") for h in hist if h.get("day")})
+        if known and known[0] < today:
+            day_from = known[0]
+        else:
+            day_from = today
+        day_to = today
+        day_keys = None  # weekly buckets, built below
+
+    # Today's live completed blocks are authoritative (per-block sums, no
+    # subject/topic collapse), mirroring /api/stats.
+    plan = doc.get("plan")
+    blocks = plan.get("blocks", []) if isinstance(plan, dict) else []
+    reset_ts = int(doc.get("stats_reset_ts") or 0)
+    done_blocks = [
+        b for b in blocks
+        if b.get("type") == "study" and b.get("status") == "done"
+    ]
+    if reset_ts:
+        done_blocks = [
+            b for b in done_blocks
+            if int(b.get("done_ts") or 0) > reset_ts
+        ]
+    use_plan_today = bool(done_blocks) and day_from <= today <= day_to
+
+    def _zero():
+        return {"minutes": 0, "sessions": 0, "questions": 0, "pages": 0}
+
+    def _add(row, minutes, questions, pages, sessions=1):
+        row["minutes"] += minutes
+        row["sessions"] += sessions
+        row["questions"] += questions
+        row["pages"] += pages
+
+    per_day = {}
+    subjects = {}
+    topics = {}
+    for h in hist:
+        k = h.get("day")
+        if not k or k < day_from or k > day_to:
+            continue
+        if use_plan_today and k == today:
+            continue
+        s = h.get("subject") or "Genel"
+        t = h.get("topic") or "—"
+        mins = int(h.get("minutes", 0))
+        q = int(h.get("questions", 0))
+        p = int(h.get("pages", 0))
+        _add(per_day.setdefault(k, _zero()), mins, q, p)
+        _add(subjects.setdefault(s, _zero()), mins, q, p)
+        _add(topics.setdefault((s, t), _zero()), mins, q, p)
+    if use_plan_today:
+        for b in done_blocks:
+            s = b.get("subject") or "Genel"
+            t = b.get("topic") or "—"
+            mins = int(b.get("duration", 0))
+            q = int(b.get("questions") or 0)
+            p = int(b.get("pages") or 0)
+            _add(per_day.setdefault(today, _zero()), mins, q, p)
+            _add(subjects.setdefault(s, _zero()), mins, q, p)
+            _add(topics.setdefault((s, t), _zero()), mins, q, p)
+
+    # Day series: daily buckets for week/month, weekly buckets for all-time.
+    days = []
+    if day_keys is not None:
+        for k in day_keys:
+            row = dict(per_day.get(k, _zero()))
+            row["date"] = k
+            if rng == "week":
+                row["label"] = _weekday_short(k)
+            else:
+                row["label"] = str(datetime.strptime(k, "%Y-%m-%d").day)
+            days.append(row)
+        first_dt = datetime.strptime(day_from, "%Y-%m-%d")
+        last_dt = datetime.strptime(day_to, "%Y-%m-%d")
+        days_total = (last_dt - first_dt).days + 1
+    else:
+        first_dt = datetime.strptime(day_from, "%Y-%m-%d")
+        last_dt = datetime.strptime(day_to, "%Y-%m-%d")
+        days_total = (last_dt - first_dt).days + 1
+        weeks = {}
+        cur = first_dt
+        while cur <= last_dt:
+            wk = (cur - timedelta(days=cur.weekday())).strftime("%Y-%m-%d")
+            row = per_day.get(cur.strftime("%Y-%m-%d"))
+            if row:
+                _add(weeks.setdefault(wk, _zero()),
+                     row["minutes"], row["questions"], row["pages"], row["sessions"])
+            else:
+                weeks.setdefault(wk, _zero())
+            cur += timedelta(days=1)
+        for wk in sorted(weeks):
+            row = dict(weeks[wk])
+            row["date"] = wk
+            row["label"] = _tr_date(datetime.strptime(wk, "%Y-%m-%d"))
+            days.append(row)
+
+    total_min = sum(r["minutes"] for r in per_day.values())
+    total_sessions = sum(r["sessions"] for r in per_day.values())
+    total_q = sum(r["questions"] for r in per_day.values())
+    total_p = sum(r["pages"] for r in per_day.values())
+    days_active = sum(1 for r in per_day.values() if r["minutes"] > 0)
+
+    subjects_list = [
+        {
+            "subject": k,
+            "minutes": v["minutes"],
+            "sessions": v["sessions"],
+            "questions": v["questions"],
+            "pages": v["pages"],
+            "percent": round(v["minutes"] / total_min * 100, 1) if total_min else 0,
+        }
+        for k, v in sorted(subjects.items(), key=lambda kv: -kv[1]["minutes"])
+    ]
+    topics_list = [
+        {
+            "subject": k[0],
+            "topic": k[1],
+            "minutes": v["minutes"],
+            "sessions": v["sessions"],
+        }
+        for k, v in sorted(topics.items(), key=lambda kv: -kv[1]["minutes"])[:8]
+    ]
+
+    best = max(days, key=lambda d: d["minutes"]) if days and total_min else None
+    g = _game(doc)
+    xp = int(g.get("xp", 0))
+    badges = sorted(g.get("badges", []))
+
+    first_lbl = _tr_date(first_dt)
+    last_lbl = f"{_tr_date(last_dt)} {last_dt.year}"
+    if rng == "week":
+        title = f"{first_lbl} – {last_lbl}"
+    elif rng == "month":
+        title = f"Son 30 gün · {first_lbl} – {last_lbl}"
+    elif total_min or known:
+        title = f"Tüm zamanlar · {first_lbl} – {last_lbl}"
+    else:
+        title = "Tüm zamanlar · henüz veri yok"
+
+    return jsonify({
+        "status": "success",
+        "range": {
+            "key": rng,
+            "title": title,
+            "from": day_from,
+            "to": day_to,
+            "days_total": days_total,
+            "days_active": days_active,
+        },
+        "totals": {
+            "minutes": total_min,
+            "sessions": total_sessions,
+            "questions": total_q,
+            "pages": total_p,
+            "avg_minutes": round(total_min / days_active, 1) if days_active else 0,
+        },
+        "days": days,
+        "subjects": subjects_list,
+        "topics": topics_list,
+        "highlights": {
+            "best_day": {
+                "date": best["date"],
+                "label": best["label"],
+                "minutes": best["minutes"],
+            } if best else None,
+            "top_subject": {
+                "subject": subjects_list[0]["subject"],
+                "minutes": subjects_list[0]["minutes"],
+                "percent": subjects_list[0]["percent"],
+            } if subjects_list else None,
+            "consistency": round(days_active / days_total * 100, 1) if days_total else 0,
+            "streak": _compute_streak(g),
+            "xp": xp,
+            "level": _level_from_xp(xp),
+            "badges": badges,
+        },
+    })
+
+
 @app.get("/api/game")
 def get_game():
     with LOCK:

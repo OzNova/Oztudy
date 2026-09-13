@@ -628,3 +628,37 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
   .pblock.running .timer-state-badge.run{animation:none}
 }
 
+/* ============ Report ============ */
+.rp-pills{display:flex;gap:6px;flex-wrap:wrap}
+.rp-pill{background:var(--surface);border:1px solid var(--border);color:var(--muted);font:600 11.5px var(--font);border-radius:999px;padding:6px 13px;cursor:pointer;transition:all .12s ease;white-space:nowrap}
+.rp-pill:hover{border-color:var(--primary);color:var(--primary)}
+.rp-pill.active{background:var(--primary);border-color:var(--primary);color:#fff}
+.rp-topic{display:flex;align-items:center;gap:10px;padding:8px 2px;border-top:1px solid var(--border-soft);font-size:12px}
+.rp-topic:first-child{border-top:0}
+.rp-rank{flex:none;width:22px;height:22px;border-radius:999px;background:var(--primary-soft);color:var(--primary);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.rp-topic:first-child .rp-rank{background:var(--primary);color:#fff}
+.rp-tt{flex:1;min-width:0;color:var(--text);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rp-ts{display:inline-block;background:var(--primary-soft);color:var(--primary);border-radius:6px;padding:1px 8px;font-size:10.5px;font-weight:700;margin-right:8px}
+.rp-tm{flex:none;color:var(--muted);font-weight:600;font-variant-numeric:tabular-nums;font-size:11px}
+
+/* ============ Print (report) ============ */
+@media print{
+  :root[data-theme="dark"]{
+    --bg:#FFFFFF;--surface:#FFFFFF;--border:#D8DDE8;--border-soft:#ECEFF4;
+    --text:#131A2E;--muted:#5B6678;--faint:#98A2B4;
+    --primary:#4F46E5;--primary-strong:#4338CA;--primary-soft:#EEF0FF;--primary-line:#C7D2FE;
+    --success:#059669;--success-soft:#EAF9F2;
+  }
+  body{background:#fff;background-image:none}
+  header.topnav,aside.sidebar,.tabbar{display:none!important}
+  .wrap{padding:0;max-width:none}
+  .layout{display:block!important}
+  main.main{margin:0;max-width:none}
+  main.main > :not(#report-panel){display:none!important}
+  #report-panel{display:block!important;border:0;padding:0;animation:none}
+  .rp-no-print{display:none!important}
+  .stats-panel-head h2{font-size:18px}
+  .stat-card,.stats-cols > div,.rp-topic{break-inside:avoid}
+  .bar-fill,.day-fill{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+
