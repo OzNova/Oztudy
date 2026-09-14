@@ -1786,13 +1786,24 @@
     _hmResizeT = setTimeout(renderHeatmap, 200);
   });
 
-  /* ============ FEATURE 3: Ambient Focus Sounds ============ */
-  var AMBIENT_URLS = {
-    rain: "https://cdn.pixabay.com/audio/2022/05/27/audio_2e6e0e1e8f.mp3",
-    lofi: "https://cdn.pixabay.com/audio/2022/10/25/audio_9465e2e1c1.mp3",
-    library: "https://cdn.pixabay.com/audio/2021/08/09/audio_c8c8a73467.mp3",
-    whitenoise: "https://cdn.pixabay.com/audio/2022/03/10/audio_c8f0b6a5f1.mp3"
-  };
+  /* ============ FEATURE 3: Ambient Focus Sounds ============
+     Offline WebAudio synthesis (the Pixabay CDN URLs returned 403, so no
+     remote file is used). rain/whitenoise/library are filtered-noise beds,
+     lofi reuses the existing oscillator preset. Picker and the manual
+     Lo-Fi/Deep-Space buttons share one channel: enabling one stops the
+     other. Never throws; failures only console.warn. */
+  var ambientNodes = null;
+  function ambientNoiseBuffer(ctx, brown){
+    var len = Math.floor(ctx.sampleRate * 2);
+    var buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    var d = buf.getChannelData(0), last = 0;
+    for (var i = 0; i < len; i++){
+      var w = Math.random() * 2 - 1;
+      if (brown){ last = (last + 0.02 * w) / 1.02; d[i] = last * 3.5; }
+      else d[i] = w * 0.6;
+    }
+    return buf;
+  }
   function currentAmbient(){
     return (appSettings && appSettings.ambient_sound) || "none";
   }
@@ -1803,23 +1814,51 @@
       else b.classList.remove("on");
     });
   }
+  function silenceManualOsc(){
+    stopLoFi(); stopSpace();
+    var zl = $("zen-lofi"), zs = $("zen-space");
+    if (zl) zl.classList.remove("on");
+    if (zs) zs.classList.remove("on");
+  }
   function playAmbient(sound){
-    var a = $("ambient-audio");
-    if (!a) return;
-    if (!sound || sound === "none" || !AMBIENT_URLS[sound]){
-      try { a.pause(); } catch(e){}
-      markAmbientButtons();
-      return;
-    }
+    stopAmbient();
+    silenceManualOsc();
+    if (!sound || sound === "none"){ markAmbientButtons(); return; }
+    if (sound === "lofi"){ startLoFi(); markAmbientButtons(); return; }
+    var ctx = ensureAudio();
+    if (!ctx){ console.warn("[oztudy] ambient audio unavailable"); markAmbientButtons(); return; }
     try {
-      if (a.getAttribute("src") !== AMBIENT_URLS[sound]) a.src = AMBIENT_URLS[sound];
-      a.volume = 0.3;
-      var p = a.play();
-      if (p && p.catch) p.catch(function(err){ console.warn("[oztudy] ambient audio failed:", err); });
+      var master = ctx.createGain();
+      master.gain.value = (sound === "library") ? 0.05 : 0.12;
+      master.connect(ctx.destination);
+      var src = ctx.createBufferSource();
+      src.buffer = ambientNoiseBuffer(ctx, sound !== "whitenoise");
+      src.loop = true;
+      var nodes = [src];
+      if (sound === "rain"){
+        var hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 300;
+        var lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 1400;
+        src.connect(hp); hp.connect(lp); lp.connect(master);
+        var lfo = ctx.createOscillator(); lfo.type = "sine"; lfo.frequency.value = 0.4;
+        var lg = ctx.createGain(); lg.gain.value = 0.03;
+        lfo.connect(lg); lg.connect(master.gain); lfo.start(); nodes.push(lfo);
+      } else if (sound === "library"){
+        var lp2 = ctx.createBiquadFilter(); lp2.type = "lowpass"; lp2.frequency.value = 400;
+        src.connect(lp2); lp2.connect(master);
+      } else {
+        src.connect(master);
+      }
+      src.start();
+      ambientNodes = { master: master, nodes: nodes };
     } catch(err){ console.warn("[oztudy] ambient audio failed:", err); }
     markAmbientButtons();
   }
   function stopAmbient(){
+    if (ambientNodes){
+      ambientNodes.nodes.forEach(function(n){ try { n.stop(); } catch(e){} });
+      try { ambientNodes.master.disconnect(); } catch(e){}
+      ambientNodes = null;
+    }
     var a = $("ambient-audio");
     if (a){ try { a.pause(); } catch(e){} }
   }
@@ -2302,12 +2341,19 @@
   var _zlofi = $("zen-lofi");
   if (_zlofi) _zlofi.addEventListener("click", function(){
     var on = _zlofi.classList.toggle("on");
-    if (on) startLoFi(); else stopLoFi();
+    // Manual preset and picker share one channel: enabling one silences the other.
+    stopAmbient();
+    if (appSettings) appSettings.ambient_sound = "none";
+    markAmbientButtons();
+    if (on){ stopSpace(); if ($("zen-space")) $("zen-space").classList.remove("on"); startLoFi(); } else stopLoFi();
   });
   var _zspace = $("zen-space");
   if (_zspace) _zspace.addEventListener("click", function(){
     var on = _zspace.classList.toggle("on");
-    if (on) startSpace(); else stopSpace();
+    stopAmbient();
+    if (appSettings) appSettings.ambient_sound = "none";
+    markAmbientButtons();
+    if (on){ stopLoFi(); if ($("zen-lofi")) $("zen-lofi").classList.remove("on"); startSpace(); } else stopSpace();
   });
   var _zab = $("zen-abandon");
   if (_zab) _zab.addEventListener("click", function(){
