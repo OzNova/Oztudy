@@ -1793,16 +1793,28 @@
      Lo-Fi/Deep-Space buttons share one channel: enabling one stops the
      other. Never throws; failures only console.warn. */
   var ambientNodes = null;
-  function ambientNoiseBuffer(ctx, brown){
-    var len = Math.floor(ctx.sampleRate * 2);
-    var buf = ctx.createBuffer(1, len, ctx.sampleRate);
-    var d = buf.getChannelData(0), last = 0;
-    for (var i = 0; i < len; i++){
-      var w = Math.random() * 2 - 1;
-      if (brown){ last = (last + 0.02 * w) / 1.02; d[i] = last * 3.5; }
-      else d[i] = w * 0.6;
+  function ambientNoiseBuffer(ctx, kind){
+    // Soft, loop-safe beds: pink noise (Paul Kellet, mellow hiss) for airy
+    // sounds, brown noise (deep rumble) for room tone. Tail crossfades into
+    // the head so the loop point never clicks.
+    var secs = 4, fadeSec = 1.0;
+    var len = Math.floor(ctx.sampleRate * secs);
+    var fade = Math.floor(ctx.sampleRate * fadeSec);
+    var buf = ctx.createBuffer(1, len + fade, ctx.sampleRate);
+    var d = buf.getChannelData(0), i, w;
+    if (kind === "brown"){
+      var last = 0;
+      for (i = 0; i < len + fade; i++){ w = Math.random() * 2 - 1; last = (last + 0.02 * w) / 1.02; d[i] = last * 3.5; }
+    } else {
+      var b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+      for (i = 0; i < len + fade; i++){ w = Math.random() * 2 - 1;
+        b0 = 0.99886 * b0 + w * 0.0555179; b1 = 0.99332 * b1 + w * 0.0750759;
+        b2 = 0.96900 * b2 + w * 0.1538520; b3 = 0.86650 * b3 + w * 0.3104856;
+        b4 = 0.55000 * b4 + w * 0.5329522; b5 = -0.7616 * b5 - w * 0.0168980;
+        d[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * 0.5362) * 0.11; b6 = w * 0.115926; }
     }
-    return buf;
+    for (i = 0; i < fade; i++){ var t = i / fade; d[i] = d[i] * t + d[len + i] * (1 - t); }
+    return { buffer: buf, length: len };
   }
   function currentAmbient(){
     return (appSettings && appSettings.ambient_sound) || "none";
@@ -1827,36 +1839,54 @@
     if (sound === "lofi"){ startLoFi(); markAmbientButtons(); return; }
     var ctx = ensureAudio();
     if (!ctx){ console.warn("[oztudy] ambient audio unavailable"); markAmbientButtons(); return; }
+    // Calm mix: low gains + slow 2.5s fade-in so nothing starts abruptly.
+    var recipes = {
+      rain: { kind: "pink", hp: 250, lp: 900, gain: 0.07, lfo: 0.15, depth: 0.015 },
+      whitenoise: { kind: "pink", hp: 0, lp: 480, gain: 0.05, lfo: 0.1, depth: 0.008 },
+      library: { kind: "brown", hp: 0, lp: 240, gain: 0.035, lfo: 0.07, depth: 0.01 }
+    };
+    var recipe = recipes[sound];
+    if (!recipe){ markAmbientButtons(); return; }
     try {
       var master = ctx.createGain();
-      master.gain.value = (sound === "library") ? 0.05 : 0.12;
+      master.gain.value = 0;
       master.connect(ctx.destination);
+      var made = ambientNoiseBuffer(ctx, recipe.kind);
       var src = ctx.createBufferSource();
-      src.buffer = ambientNoiseBuffer(ctx, sound !== "whitenoise");
+      src.buffer = made.buffer;
       src.loop = true;
+      src.loopEnd = made.length / made.buffer.sampleRate;
       var nodes = [src];
-      if (sound === "rain"){
-        var hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 300;
-        var lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 1400;
-        src.connect(hp); hp.connect(lp); lp.connect(master);
-        var lfo = ctx.createOscillator(); lfo.type = "sine"; lfo.frequency.value = 0.4;
-        var lg = ctx.createGain(); lg.gain.value = 0.03;
-        lfo.connect(lg); lg.connect(master.gain); lfo.start(); nodes.push(lfo);
-      } else if (sound === "library"){
-        var lp2 = ctx.createBiquadFilter(); lp2.type = "lowpass"; lp2.frequency.value = 400;
-        src.connect(lp2); lp2.connect(master);
-      } else {
-        src.connect(master);
+      var head = src;
+      if (recipe.hp){
+        var hp = ctx.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = recipe.hp;
+        head.connect(hp); head = hp;
       }
+      var lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = recipe.lp;
+      head.connect(lp); lp.connect(master);
+      var lfo = ctx.createOscillator(); lfo.type = "sine"; lfo.frequency.value = recipe.lfo;
+      var lg = ctx.createGain(); lg.gain.value = recipe.depth;
+      lfo.connect(lg); lg.connect(master.gain); lfo.start(); nodes.push(lfo);
       src.start();
+      master.gain.linearRampToValueAtTime(recipe.gain, ctx.currentTime + 2.5);
       ambientNodes = { master: master, nodes: nodes };
     } catch(err){ console.warn("[oztudy] ambient audio failed:", err); }
     markAmbientButtons();
   }
   function stopAmbient(){
     if (ambientNodes){
-      ambientNodes.nodes.forEach(function(n){ try { n.stop(); } catch(e){} });
-      try { ambientNodes.master.disconnect(); } catch(e){}
+      (function(snap){
+        try { snap.master.gain.cancelScheduledValues(0); } catch(e){}
+        var ctx = null;
+        try { ctx = snap.master.context; } catch(e){}
+        try {
+          if (ctx) snap.master.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.3);
+        } catch(e){}
+        setTimeout(function(){
+          snap.nodes.forEach(function(n){ try { n.stop(); } catch(e){} });
+          try { snap.master.disconnect(); } catch(e){}
+        }, 350);
+      })(ambientNodes);
       ambientNodes = null;
     }
     var a = $("ambient-audio");
