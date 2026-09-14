@@ -2266,6 +2266,16 @@
   }
 
   function saveSettings(){
+    var btn = $("settings-save");
+    if (btn){ btn.disabled = true; btn.textContent = "Kaydediliyor…"; }
+    function settingsFeedback(ok, label){
+      var panel = $("settings-panel");
+      if (panel){ panel.classList.remove("saved-flash"); void panel.offsetWidth; panel.classList.add("saved-flash"); }
+      if (!btn) return;
+      btn.textContent = label;
+      if (ok) btn.classList.add("saved");
+      setTimeout(function(){ btn.disabled = false; btn.textContent = "Kaydet"; btn.classList.remove("saved"); }, 1400);
+    }
     var st = { theme: "light" };
     var r = document.querySelector("input[name='set-theme']:checked");
     if (r) st.theme = r.value;
@@ -2289,7 +2299,7 @@
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(st)
     }).then(function(r){ return r.json(); }).then(function(d){
-      if (d.status !== "success"){ setMsg("Ayarlar kaydedilemedi.", "err"); return; }
+      if (d.status !== "success"){ setMsg("Ayarlar kaydedilemedi.", "err"); settingsFeedback(false, "Tekrar Dene"); return; }
       appSettings = d.settings;
       applyTheme(appSettings.theme);
       applyTimerTheme(appSettings.timer_theme);
@@ -2298,9 +2308,11 @@
       applySettingsToWizard(appSettings);
       if (changed){ rebuildPlanWithSettings(); }
       else setMsg("✓ Ayarlar kaydedildi.", "ok");
+      settingsFeedback(true, "✓ Kaydedildi");
+      showToast("✓ Ayarlar kaydedildi.");
       saveExamsFromForm();
       saveHabitsFromForm();
-    }).catch(function(){ setMsg("Bağlantı hatası.", "err"); });
+    }).catch(function(){ setMsg("Bağlantı hatası.", "err"); settingsFeedback(false, "Tekrar Dene"); });
   }
 
   $("shift15").addEventListener("click", function(){ adjust({ action: "shift", offset: 15 }); });
