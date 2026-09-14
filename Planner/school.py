@@ -20,14 +20,31 @@ def _exams_for(doc):
     return weeks
 
 
-def _next_exam(weeks, today=None):
+def _next_exam(weeks: list[dict] | None, today: datetime.date | None = None) -> dict | None:
+    """Return the nearest upcoming (or ongoing) exam week.
+
+    ``days_until`` is clamped to 0 while an exam is ongoing and an explicit
+    ``ongoing`` flag is set. Malformed entries (bad/missing dates) are
+    skipped instead of raising.
+    """
+    from datetime import date as _date
+
     today = today or datetime.now().date()
-    today_key = today.isoformat()
-    best = None
-    for w in weeks:
+    if isinstance(today, datetime):
+        today = today.date()
+    today_key = today.isoformat() if isinstance(today, _date) else str(today)
+    best: dict | None = None
+    for w in weeks or []:
+        if not isinstance(w, dict):
+            continue
         start = str(w.get("start") or "")
         end = str(w.get("end") or "")
         if not start or not end:
+            continue
+        try:
+            start_d = datetime.strptime(start, "%Y-%m-%d").date()
+            end_d = datetime.strptime(end, "%Y-%m-%d").date()
+        except ValueError:
             continue
         if end < today_key:
             continue
@@ -35,10 +52,15 @@ def _next_exam(weeks, today=None):
             best = {"label": w.get("label") or "Sınav", "start": start, "end": end}
     if best is None:
         return None
-    days = (datetime.strptime(best["start"], "%Y-%m-%d").date() - today).days
-    ongoing = days <= 0 and datetime.strptime(best["end"], "%Y-%m-%d").date() >= today
+    try:
+        start_d = datetime.strptime(best["start"], "%Y-%m-%d").date()
+        end_d = datetime.strptime(best["end"], "%Y-%m-%d").date()
+    except ValueError:
+        return None
+    days = (start_d - today).days if isinstance(today, _date) else 0
+    ongoing = days <= 0 and end_d >= today if isinstance(today, _date) else False
     best["days_until"] = max(0, days)
-    best["ongoing"] = ongoing
+    best["ongoing"] = bool(ongoing)
     return best
 
 

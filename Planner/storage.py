@@ -571,7 +571,13 @@ def _write_tx(conn, doc):
         raise
 
 
-def _settings_for(doc):
+def _settings_for(doc: dict) -> dict:
+    """Merge stored settings over defaults with range validation.
+
+    ``study_min`` is clamped to 15–120, ``break_min`` to 5–30,
+    ``duration_h`` to 1–12; invalid window times and themes fall back to
+    defaults. Never raises on corrupt input.
+    """
     st = dict(DEFAULT_SETTINGS)
     saved = doc.get("settings")
     if isinstance(saved, dict):
@@ -669,7 +675,13 @@ def _add_missed(doc, item):
     return missed
 
 
-def _repair_plan(plan):
+def _repair_plan(plan: dict) -> dict:
+    """Backfill and validate a stored plan in place; always returns ``plan``.
+
+    Validates ``type`` (study/break), ``status`` (pending/done/pushed) and
+    ``confidence`` (red/yellow/green), resetting invalid values to defaults
+    so corrupt blocks can never crash stats or the timeline.
+    """
     # Backfill plan identity fields for docs created before the midnight-
     # rollover fix (plan day / created_at).
     if not plan.get("day"):
@@ -679,8 +691,14 @@ def _repair_plan(plan):
         except (TypeError, ValueError):
             plan["day"] = None
     if not isinstance(plan.get("created_at"), int):
-        plan["created_at"] = int(time.time())
-    for b in plan.get("blocks", []):
+        try:
+            plan["created_at"] = int(plan.get("created_at") or time.time())
+        except (TypeError, ValueError):
+            plan["created_at"] = int(time.time())
+    _VALID_TYPES = ("study", "break")
+    _VALID_STATUS = ("pending", "done", "pushed")
+    _VALID_CONF = ("red", "yellow", "green")
+    for b in plan.get("blocks", []) or []:
         if not isinstance(b, dict):
             continue
         win = None
@@ -689,22 +707,34 @@ def _repair_plan(plan):
         except (TypeError, ValueError):
             win = None
         if not (isinstance(b.get("duration"), int) and b["duration"] >= 1):
-            b["duration"] = win if win is not None else 45
+            try:
+                cand = int(b.get("duration") or 0)
+                b["duration"] = cand if cand >= 1 else (win if win is not None else DEFAULT_SETTINGS["study_min"])
+            except (TypeError, ValueError):
+                b["duration"] = win if win is not None else DEFAULT_SETTINGS["study_min"]
         if not (isinstance(b.get("origDuration"), int) and b["origDuration"] >= 1):
             b["origDuration"] = b["duration"]
-        b.setdefault("type", "study")
-        b.setdefault("status", "pending")
+        if b.get("type") not in _VALID_TYPES:
+            b["type"] = "study"
+        if b.get("status") not in _VALID_STATUS:
+            b["status"] = "pending"
+        if b.get("confidence") not in _VALID_CONF:
+            # Break blocks don't carry a confidence; leave them empty rather
+            # than forcing a bogus value, but study blocks fall back to yellow.
+            b["confidence"] = "yellow" if b.get("type") == "study" else b.get("confidence", "yellow")
+            if b.get("confidence") not in _VALID_CONF:
+                b["confidence"] = "yellow"
         b.setdefault("subject", "")
         b.setdefault("topic", "")
-        b.setdefault("confidence", "yellow")
         b.setdefault("elapsed", 0)
         b.setdefault("note", "")
-        if "active" not in b:
-            b["active"] = False
+        if not isinstance(b.get("active"), bool):
+            b["active"] = bool(b.get("active", False))
         # Pre-fix done blocks already granted XP once — mark them so a future
         # pending->done toggle does not award a second time.
         if b.get("status") == "done" and "xp_awarded" not in b:
             b["xp_awarded"] = True
+    return plan
 
 
 def _rollover(doc, now=None):

@@ -1,4 +1,11 @@
-"""Study-plan scheduler: build_plan, catch-up, timeline ops, history."""
+"""Study-plan scheduler: build_plan, catch-up, timeline ops, history.
+
+Study blocks use the user-configured ``study_min`` setting (default 45 min)
+and breaks use ``break_min`` (default 10 min); there are no fixed-duration
+constants beyond :data:`utils.REVIEW_BLOCK` for spaced reviews.
+"""
+from __future__ import annotations
+
 import time
 import uuid
 from datetime import datetime
@@ -6,7 +13,7 @@ from datetime import datetime
 from gamification import _check_badges, _game, _game_end, _game_record_day
 from school import PERIOD_SLOTS, SCHOOL_END, SCHOOL_START, _day_status, _school_digest
 from storage import _load_doc, _settings_for
-from utils import REVIEW_BLOCK, _day_key, _hhmm, _minutes, _now_min
+from utils import MIN_PLAN_WINDOW_MIN, REVIEW_BLOCK, SECONDS_PER_DAY, _day_key, _hhmm, _minutes, _now_min
 
 
 
@@ -56,11 +63,43 @@ MODE_SUFFIX = {
 }
 
 
-def _stats(blocks):
-    active = [b for b in blocks if b["type"] == "study" and b.get("status") != "pushed"]
-    total = sum(b["duration"] for b in active)
-    done = sum(b["duration"] for b in active if b["status"] == "done")
-    return {"total_min": total, "done_min": done, "done_count": sum(1 for b in active if b["status"] == "done")}
+def _block_duration(block: dict) -> int:
+    """Return a validated non-negative study duration for a block.
+
+    Non-numeric, missing, or negative values are treated as 0 so a single
+    corrupt block can never crash stats or analytics.
+    """
+    try:
+        return max(0, int(block.get("duration") or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _stats(blocks: list[dict] | None) -> dict[str, int]:
+    """Aggregate study time over ``blocks``, ignoring breaks/pushed items.
+
+    Defensive: blocks may come from older or hand-edited stores, so every
+    field is accessed via ``.get()`` and durations are validated. Only
+    ``type == "study"`` blocks count toward totals.
+    """
+    if not isinstance(blocks, list):
+        return {"total_min": 0, "done_min": 0, "done_count": 0}
+    total = 0
+    done = 0
+    done_count = 0
+    for b in blocks:
+        if not isinstance(b, dict):
+            continue
+        if b.get("type") != "study":
+            continue
+        if b.get("status") == "pushed":
+            continue
+        dur = _block_duration(b)
+        total += dur
+        if b.get("status") == "done":
+            done += dur
+            done_count += 1
+    return {"total_min": total, "done_min": done, "done_count": done_count}
 
 
 def _upsert_weak(doc, item):
@@ -101,7 +140,7 @@ def _create_reviews(doc, block):
     existing = {(r["subject"], r["topic"], r["targetDay"]) for r in reviews}
     offsets = [(3, "Hızlı Tekrar"), (7, "Kendini Sınama")]
     for days, label in offsets:
-        target = _day_key(now_ts + days * 86400)
+        target = _day_key(now_ts + days * SECONDS_PER_DAY)
         if (block["subject"], block["topic"], target) in existing:
             continue
         reviews.append({
@@ -152,35 +191,65 @@ def _log_history(doc, block):
     _game_end(doc, block)
 
 
-def _gather_overdue(doc):
+def _gather_overdue(doc: dict) -> list[dict]:
+    """Collect overdue study items from missed/scheduled queues and the live plan.
+
+    Defensive: legacy docs may miss keys, so every block field is read via
+    ``.get()`` and skipped when subject/topic are absent.
+    """
     today = _day_key(int(time.time()))
-    items = []
-    seen = set()
+    items: list[dict] = []
+    seen: set[tuple] = set()
 
     def push(subject, topic, minutes, day, source, confidence):
+        subject = str(subject or "").strip()
+        topic = str(topic or "").strip()
+        if not subject or not topic:
+            return
         key = (subject, topic)
         if key in seen:
             return
         seen.add(key)
+        try:
+            minutes = max(1, int(minutes or 30))
+        except (TypeError, ValueError):
+            minutes = 30
+        if confidence not in CONFIDENCES:
+            confidence = "yellow"
         items.append({
             "subject": subject, "topic": topic,
-            "minutes": int(minutes or 30), "day": day,
-            "source": source, "confidence": confidence or "yellow",
+            "minutes": minutes, "day": day,
+            "source": source, "confidence": confidence,
         })
 
-    for m in doc.get("missed", []):
-        push(m["subject"], m["topic"], m.get("minutes", 30), m.get("day"), m.get("source", "plan"), m.get("confidence"))
-    for it in doc.get("tomorrow", []):
-        push(it["subject"], it["topic"], 30, today, "push", "yellow")
-    for e in doc.get("scheduled", []):
+    for m in doc.get("missed", []) or []:
+        if not isinstance(m, dict):
+            continue
+        push(m.get("subject"), m.get("topic"), m.get("minutes", 30), m.get("day"), m.get("source", "plan"), m.get("confidence"))
+    for it in doc.get("tomorrow", []) or []:
+        if not isinstance(it, dict):
+            continue
+        push(it.get("subject"), it.get("topic"), 30, today, "push", "yellow")
+    for e in doc.get("scheduled", []) or []:
+        if not isinstance(e, dict):
+            continue
         if e.get("day") and e.get("day") < today:
-            push(e["subject"], e["topic"], e.get("minutes", 30), e["day"], "scheduled", e.get("confidence", "yellow"))
+            push(e.get("subject"), e.get("topic"), e.get("minutes", 30), e.get("day"), "scheduled", e.get("confidence", "yellow"))
     plan = doc.get("plan")
     if isinstance(plan, dict):
         now_min = _now_min()
-        for b in plan.get("blocks", []):
-            if b.get("type") == "study" and b.get("status") != "done" and b.get("end") is not None and b["end"] <= now_min:
-                push(b["subject"], b["topic"], b.get("duration", 30), today, "plan", b.get("confidence", "yellow"))
+        for b in plan.get("blocks", []) or []:
+            if not isinstance(b, dict):
+                continue
+            if b.get("type") != "study" or b.get("status") == "done":
+                continue
+            try:
+                end = b.get("end")
+                if end is None or int(end) > now_min:
+                    continue
+            except (TypeError, ValueError):
+                continue
+            push(b.get("subject"), b.get("topic"), b.get("duration", 30), today, "plan", b.get("confidence", "yellow"))
     return items
 
 
@@ -264,7 +333,23 @@ def _resize_block(plan, block, new_duration):
     return delta
 
 
-def build_plan(topics, start, end, duration_h, mode, criterion):
+def build_plan(
+    topics: list[dict] | None,
+    start: str,
+    end: str,
+    duration_h: int,
+    mode: str,
+    criterion: str,
+) -> tuple[dict | None, str | None]:
+    """Build a study plan of ``study_min`` focus blocks + ``break_min`` breaks.
+
+    Returns ``(plan, None)`` on success or ``(None, error_message)`` on bad
+    input. Block lengths come from user settings (see
+    :data:`storage.DEFAULT_SETTINGS`); the school-day clamp only avoids the
+    full 08:00–15:30 window except for free gaps (lunch/``Ara``/``Boş``) —
+    scattered teaching periods are intentionally not packed (documented
+    simplification).
+    """
     if not topics:
         return None, "En az bir konu seçmelisin."
     s, e = _minutes(start), _minutes(end)
@@ -272,8 +357,8 @@ def build_plan(topics, start, end, duration_h, mode, criterion):
         return None, "Geçerli bir saat formatı kullan (HH:MM)."
     if e <= s:
         return None, "Bitiş saati başlangıçtan sonra olmalı."
-    if e - s < 30:
-        return None, "Zaman penceresi en az 30 dakika olmalı."
+    if e - s < MIN_PLAN_WINDOW_MIN:
+        return None, f"Zaman penceresi en az {MIN_PLAN_WINDOW_MIN} dakika olmalı."
 
     st = _settings_for(_load_doc())
     study_min = st["study_min"]
@@ -295,13 +380,15 @@ def build_plan(topics, start, end, duration_h, mode, criterion):
             (a, b) for (a, b, label) in PERIOD_SLOTS
             if label in ("Ara", "Boş", "Öğle Yemeği")
         ]
-        in_free_gap = any(s >= a and e <= b and e - s >= 30 for (a, b) in free_gaps)
+        in_free_gap = any(s >= a and e <= b and e - s >= MIN_PLAN_WINDOW_MIN for (a, b) in free_gaps)
         if not in_free_gap and s < SCHOOL_END and e > SCHOOL_START:
+            from utils import MINUTES_PER_DAY
+
             length = e - s
             s = max(s, SCHOOL_END)
-            e = min(s + length, 24 * 60 - 1)
-            if e - s < 30:
-                e = min(s + 30, 24 * 60 - 1)
+            e = min(s + length, MINUTES_PER_DAY - 1)
+            if e - s < MIN_PLAN_WINDOW_MIN:
+                e = min(s + MIN_PLAN_WINDOW_MIN, MINUTES_PER_DAY - 1)
             school_clamped = True
         if e <= s:
             return None, "Okul günü çalışma penceresi 15:30 sonrasına kaydırılamıyor — pencereyi güncelle."

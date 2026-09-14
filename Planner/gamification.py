@@ -1,5 +1,7 @@
 """Gamification + habits: XP, levels, badges, streaks, habit tracking."""
-from datetime import datetime, timedelta
+from __future__ import annotations
+
+from datetime import date, datetime, timedelta
 
 
 
@@ -44,12 +46,22 @@ def _habit_track(doc):
     return track if isinstance(track, dict) else {}
 
 
-def _habit_days(today=None, n=7):
+def _habit_days(today: date | None = None, n: int = 7) -> list[str]:
+    """Return the last ``n`` day keys ending today (``YYYY-MM-DD``)."""
     today = today or datetime.now().date()
     return [(today - timedelta(days=n - 1 - i)).isoformat() for i in range(n)]
 
 
-def _habit_streak(habits, track, today=None):
+def _habit_streak(
+    habits: list[dict],
+    track: dict[str, list[str]] | None,
+    today: date | None = None,
+) -> dict[str, int]:
+    """Return consecutive-day streaks per habit id.
+
+    A streak is alive only if the most recent completion is today or
+    yesterday; otherwise it resets to 0 (no ghost streaks).
+    """
     today = today or datetime.now().date()
     streaks = {}
     for h in habits:
@@ -156,7 +168,11 @@ def _game_end(doc, block):
         _game_build(doc)
 
 
-def _compute_streak(g, today=None):
+def _compute_streak(g: dict, today: date | None = None) -> int:
+    """Return the consecutive-day activity streak for game history.
+
+    Returns 0 when the most recent active day is older than yesterday.
+    """
     days = sorted(g.get("history_days", []), reverse=True)
     if not days:
         return 0

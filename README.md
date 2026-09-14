@@ -76,7 +76,79 @@ python3 Planner/run_desktop.py --version
 
 The launcher frees port 5000 automatically before starting, writes logs to
 `error.log` (next to the app, or inside `OZTUDY_DATA_DIR` when set), and falls
-back to the default browser if pywebview is unavailable.
+back to the default browser if pywebview is unavailable. Launcher logs use a
+rotating file handler (512 KB × 3 backups); the Flask child process appends to
+the same path.
+
+## Development
+
+```bash
+# run the backend with live reload off (binds 127.0.0.1:5000, no auth)
+python3 Planner/app.py
+
+# run the unit tests (stdlib only, isolated temp store for API tests)
+python3 -m unittest discover -s Planner/tests -v
+# or: cd Planner && python3 -m unittest discover -s tests -v
+```
+
+Python 3.10+ is required (uses `X | Y` type syntax and builtin generics).
+
+## API reference
+
+Base URL `http://127.0.0.1:5000`. All responses are JSON with
+`{"status": "success" | "error", ...}`. No authentication; local-only bind.
+
+| Method | Path | Body / Query | Success |
+|---|---|---|---|
+| GET | `/` | — | HTML shell |
+| GET | `/api/version` | — | `{name, version}` |
+| GET | `/api/plan` | — | `{plan \| null}` |
+| POST | `/api/plan` | `{topics:[{subject,topic,confidence}], start, end, duration_h, mode, criterion}` | `{plan, weak, tomorrow}` |
+| GET | `/api/school` | — | `{school: digest}` |
+| GET | `/api/settings` | — | `{settings}` |
+| POST | `/api/settings` | `{study_min, break_min, win_start, win_end, duration_h, theme}` (partial ok) | `{settings}` (clamped) |
+| GET | `/api/exams` | — | `{exams, next:{label,start,end,days_until,ongoing}}` |
+| POST | `/api/exams` | `{exams:[{id,label,start,end}]}` dates `YYYY-MM-DD`, `start <= end` | `{exams, next}` or 400 |
+| GET | `/api/habits` | — | `{habits, track, days, today, streaks}` |
+| POST | `/api/habits/toggle` | `{id, date: YYYY-MM-DD}` | `{track, today, streaks}` |
+| POST | `/api/habits/save` | `{habits:[{label, time: HH:MM}]}` | `{habits, track, days, today, streaks}` or 400 |
+| POST | `/api/blocks` | `{id, status: done\|pending}` or `{clear:true}` | `{plan}` |
+| POST | `/api/blocks/adjust` | `{action: start\|stop\|reset\|extend\|done\|push\|restore\|shift, id?, delta?, offset?}` | `{plan, ...}` |
+| POST | `/api/blocks/metrics` | `{id, questions?, pages?}` | `{plan}` |
+| GET | `/api/stats` | — | `{today, week, subjects, days}` |
+| POST | `/api/stats/reset` | — | `{status}` |
+| GET | `/api/report?range=week\|month\|all` | query `range` | `{range, totals, days, subjects, topics, highlights}` |
+| GET | `/api/game` | — | `{xp, level, xp_next, base_modules, base_health, badges, streak}` |
+| GET | `/api/drawer` | — | `{weak, tomorrow}` |
+| GET/POST | `/api/weak` | `{subject, topic, remove?}` | `{weak}` |
+| GET/POST | `/api/tomorrow` | `{subject, topic, remove?}` | `{tomorrow}` |
+| GET | `/api/reviews` | — | `{reviews: pending-today}` |
+| POST | `/api/reviews/schedule` | — | `{plan, message}` |
+| GET | `/api/overdue` | — | `{overdue, count}` |
+| POST | `/api/catchup` | — | `{plan, summary}` |
+
+Notes:
+
+- Study blocks use the configured `study_min` (default 45) and breaks use
+  `break_min` (default 10); `POST /api/plan` extends the timeline past the
+  window rather than dropping topics.
+- On school days an overlapping window is clamped to start at 15:30, except a
+  window fully inside a free gap (lunch 12:35–13:20, `Ara`/`Boş`), which is
+  kept as-is.
+- `days_until` is clamped to 0 while an exam is ongoing (`ongoing: true`).
+- Streaks (game + habits) reset to 0 when the last active day is older than
+  yesterday.
+
+## Data integrity
+
+- SQLite WAL store with one atomic `BEGIN IMMEDIATE` transaction per save;
+  crash mid-save rolls back instead of corrupting data.
+- All Flask reads and writes share a reentrant `LOCK`; per-connection busy
+  timeout (5 s) avoids torn reads.
+- `_repair_plan()` backfills `day`/`created_at` and resets invalid
+  `type`/`status`/`confidence`/`duration` values to defaults.
+- Corrupt legacy JSON is backed up as `planner.json.corrupt.*`, never silently
+  dropped.
 
 ## Data
 
@@ -91,12 +163,14 @@ not part of the repository.
 
 ```
 Planner/
-  app.py                        Flask backend (API + template rendering)
-  utils.py / school.py          time helpers; timetable, calendar, exams
+  app.py                        Flask routes only (API + template rendering)
+  utils.py                      time helpers (_minutes/_hhmm/_day_key/...) + constants
+  school.py                     timetable, academic calendar, exams (_next_exam, ...)
   gamification.py               XP, badges, streaks, habits
-  scheduler.py                  plan builder, catch-up, timeline ops
-  storage.py                    SQLite store + JSON migration + rollover
+  scheduler.py                  plan builder (build_plan), catch-up, timeline ops
+  storage.py                    SQLite store + JSON migration + rollover + repair
   version.py                    release version (single source of truth)
+  tests/test_core.py            stdlib unittest suite (28 tests, no extra deps)
   templates/index.html          page shell (loads static/app.js + style.css)
   static/app.js / style.css     frontend logic and styles
   static/                       icons and PWA assets

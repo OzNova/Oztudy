@@ -7,3 +7,5 @@ Planner/planner_server.log
 Planner/run_desktop_test.log
 .DS_Store
 .git/
+__pycache__/
+*.pyc

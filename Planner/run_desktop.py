@@ -6,11 +6,12 @@ pywebview window. If webview fails, falls back to the default browser.
 Run:  python3 run_desktop.py    (or double-click the .command file)
 """
 
+import logging
+import logging.handlers
 import os
 import subprocess
 import sys
 import time
-import traceback
 import urllib.request
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -21,27 +22,46 @@ PORT = 5000
 # everything under OZTUDY_DATA_DIR instead of the read-only Cellar).
 LOG_DIR = os.environ.get("OZTUDY_DATA_DIR", BASE_DIR)
 LOG_FILE = os.path.join(LOG_DIR, "error.log")
+# Rotating log bounds: keep ~1.5 MB total so a runaway backend cannot fill disk.
+LOG_MAX_BYTES = 512 * 1024
+LOG_BACKUPS = 3
 
 try:
     from version import __version__ as APP_VERSION
 except ImportError:
     APP_VERSION = "unknown"
 
+logger = logging.getLogger("oztudy.launcher")
 log_fp = None
 
 
-def _log(message):
-    print(message, file=sys.stderr)
-    if log_fp is not None:
-        print(message, file=log_fp)
+def _log(message: str) -> None:
+    """Emit a launcher status line to stderr and the rotating log."""
+    logger.info(message)
 
 
-def _open_log():
+def _open_log() -> None:
+    """Configure rotating-file + stderr logging. Degrades to stderr only."""
     global log_fp
+    logger.setLevel(logging.INFO)
+    if logger.handlers:
+        return
+    fmt = logging.Formatter("%(asctime)s [planner] %(message)s")
+    stderr_h = logging.StreamHandler(sys.stderr)
+    stderr_h.setFormatter(fmt)
+    logger.addHandler(stderr_h)
     try:
         if LOG_DIR != BASE_DIR:
             os.makedirs(LOG_DIR, exist_ok=True)
-        log_fp = open(LOG_FILE, "a", buffering=1)
+        rotating = logging.handlers.RotatingFileHandler(
+            LOG_FILE, maxBytes=LOG_MAX_BYTES, backupCount=LOG_BACKUPS,
+            encoding="utf-8",
+        )
+        rotating.setFormatter(fmt)
+        logger.addHandler(rotating)
+        # Child Flask output still streams to the same path in append mode so
+        # backend tracebacks are preserved alongside launcher logs.
+        log_fp = open(LOG_FILE, "a", buffering=1, encoding="utf-8")
     except OSError as exc:
         print(f"[planner] cannot open log file {LOG_FILE}: {exc}", file=sys.stderr)
 
@@ -90,7 +110,13 @@ def _free_port():
         pass
 
 
-def _server_ready(attempts=60, delay=0.25):
+def _server_ready(attempts: int = 60, delay: float = 0.25) -> bool:
+    """Poll ``FLASK_URL`` until HTTP 200 or the attempt budget runs out.
+
+    Total wait is ``attempts * (request timeout + delay)`` ≈ 15 s by default.
+    Each request has its own 2 s timeout so a hung socket cannot block the
+    launcher indefinitely.
+    """
     for _ in range(attempts):
         try:
             with urllib.request.urlopen(FLASK_URL, timeout=2) as r:
@@ -131,9 +157,7 @@ if __name__ == "__main__":
         )
         webview.start()
     except Exception:
-        traceback.print_exc(file=sys.stderr)
-        if log_fp is not None:
-            traceback.print_exc(file=log_fp)
+        logger.exception("webview failed")
         _log("[planner] webview unavailable — opening in the default browser")
         try:
             import webbrowser

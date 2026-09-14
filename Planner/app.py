@@ -36,7 +36,7 @@ from scheduler import (
 )
 from school import _exams_for, _next_exam, _school_digest
 from storage import LOCK, _load_doc, _load_plan, _repair_plan, _rollover, _save_doc, _settings_for
-from utils import _day_key, _hhmm, _minutes, _now_min, _weekday_short
+from utils import SECONDS_PER_DAY, _day_key, _hhmm, _minutes, _now_min, _weekday_short
 from version import __version__
 
 
@@ -109,10 +109,12 @@ def save_exams():
         if not start or not end:
             continue
         try:
-            datetime.strptime(start, "%Y-%m-%d")
-            datetime.strptime(end, "%Y-%m-%d")
+            start_d = datetime.strptime(start, "%Y-%m-%d").date()
+            end_d = datetime.strptime(end, "%Y-%m-%d").date()
         except ValueError:
             return jsonify({"status": "error", "message": "Tarih biçimi YYYY-AA-GG olmalı."}), 400
+        if start_d > end_d:
+            return jsonify({"status": "error", "message": "Başlangıç tarihi bitişten sonra olamaz."}), 400
         weeks.append({
             "id": str(it.get("id") or ("exam%d" % i)),
             "label": str(it.get("label") or ("Sınav %d" % (i + 1))),
@@ -220,11 +222,15 @@ def save_habits():
 def make_plan():
     body = request.get_json(silent=True) or {}
     topics = body.get("topics") or []
+    try:
+        duration_h = int(body.get("duration_h") or 4)
+    except (TypeError, ValueError):
+        return jsonify({"status": "error", "message": "Süre değeri geçersiz."}), 400
     plan, err = build_plan(
         topics,
         str(body.get("start") or "17:00"),
         str(body.get("end") or "19:00"),
-        int(body.get("duration_h") or 4),
+        duration_h,
         str(body.get("mode") or "practice"),
         str(body.get("criterion") or "A"),
     )
@@ -287,13 +293,19 @@ def adjust():
         plan = doc.get("plan")
 
         if action == "shift":
-            offset = int(body.get("offset") or 0)
+            try:
+                offset = int(body.get("offset") or 0)
+            except (TypeError, ValueError):
+                return jsonify({"status": "error", "message": "Kaydırma değeri geçersiz."}), 400
             if not plan:
                 return jsonify({"status": "error", "message": "Önce bir plan oluştur."}), 400
             if offset:
-                for b in plan["blocks"]:
-                    b["start"] += offset
-                    b["end"] += offset
+                for b in plan.get("blocks", []):
+                    try:
+                        b["start"] = int(b.get("start") or 0) + offset
+                        b["end"] = int(b.get("end") or 0) + offset
+                    except (TypeError, ValueError):
+                        continue
                     b["time"] = f"{_hhmm(b['start'])}-{_hhmm(b['end'])}"
                 plan["input"]["start"] = _hhmm(_minutes(plan["input"]["start"]) + offset)
                 plan["meta"]["note"] = f"{plan['meta']['note']} · ⏩ +{offset} dk kaydırıldı"
@@ -341,8 +353,14 @@ def adjust():
             if isinstance(orig, int):
                 _resize_block(plan, block, orig)
         elif action == "extend":
-            orig = int(block.get("origDuration") or block.get("duration") or 45)
-            delta = int(body.get("delta", 5) or 5)
+            try:
+                orig = int(block.get("origDuration") or block.get("duration") or 45)
+            except (TypeError, ValueError):
+                orig = 45
+            try:
+                delta = int(body.get("delta", 5) or 5)
+            except (TypeError, ValueError):
+                return jsonify({"status": "error", "message": "Süre değeri geçersiz."}), 400
             try:
                 cur = int(block.get("duration", orig))
             except (TypeError, ValueError):
@@ -955,7 +973,7 @@ def catchup():
             queued = []
             for i, it in enumerate(ordered):
                 offset = 1 + (i % 3)
-                day = _day_key(int(time.time()) + offset * 86400)
+                day = _day_key(int(time.time()) + offset * SECONDS_PER_DAY)
                 doc.setdefault("scheduled", []).append({
                     "subject": it["subject"], "topic": it["topic"],
                     "day": day, "minutes": max(REVIEW_BLOCK, min(int(it.get("minutes") or 30), 60)),
