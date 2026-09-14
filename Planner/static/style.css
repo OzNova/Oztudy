@@ -563,10 +563,6 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
 .zen-progress{height:4px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;margin-bottom:8px}
 .zen-fill{height:100%;background:linear-gradient(90deg,var(--primary),#A5B4FC);width:0%;transition:width .3s linear}
 .zen-status{font-size:12px;color:rgba(255,255,255,.35);margin-bottom:24px}
-.zen-audio{display:flex;justify-content:center;gap:10px;margin-bottom:30px}
-.zen-audio-btn{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);color:rgba(255,255,255,.45);border-radius:999px;padding:8px 16px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s ease;font-family:var(--font);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
-.zen-audio-btn:hover{border-color:rgba(255,255,255,.25);color:rgba(255,255,255,.7);background:rgba(255,255,255,.08)}
-.zen-audio-btn.on{border-color:rgba(165,180,252,.5);color:#A5B4FC;background:rgba(165,180,252,.1)}
 .zen-abandon{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);color:rgba(255,255,255,.3);border-radius:999px;padding:10px 20px;font-size:12.5px;font-weight:600;cursor:pointer;transition:all .15s ease;font-family:var(--font)}
 .zen-abandon:hover{border-color:rgba(239,68,68,.4);color:#F87171}
 .zen-actions{display:flex;gap:10px;align-items:center;justify-content:center}

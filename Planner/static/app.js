@@ -81,7 +81,6 @@
   var zenAbandoning = false;
   var zenModalOpen = false;
   var lofiNodes = null;
-  var spaceNodes = null;
 
   function ensureAudio(){
     try {
@@ -145,27 +144,6 @@
     lofiNodes.oscs.forEach(function(o){ try { o.stop(); } catch(e){} });
     lofiNodes.master.disconnect(); lofiNodes = null;
   }
-  function startSpace(){
-    if (spaceNodes) return;
-    var ctx = ensureAudio(); if (!ctx) return;
-    var master = ctx.createGain(); master.gain.value = 0.055; master.connect(ctx.destination);
-    var nodes = [];
-    [36.7, 55, 73.42].forEach(function(f){
-      var o = ctx.createOscillator(); o.type = "sine"; o.frequency.value = f;
-      var g = ctx.createGain(); g.gain.value = 0.5;
-      var lfo = ctx.createOscillator(); lfo.type = "sine"; lfo.frequency.value = 0.04 + Math.random() * 0.06;
-      var lg = ctx.createGain(); lg.gain.value = 0.11;
-      lfo.connect(lg); lg.connect(g.gain); o.connect(g); g.connect(master);
-      o.start(); lfo.start(); nodes.push(o, lfo);
-    });
-    spaceNodes = { master: master, oscs: nodes };
-  }
-  function stopSpace(){
-    if (!spaceNodes) return;
-    spaceNodes.oscs.forEach(function(o){ try { o.stop(); } catch(e){} });
-    spaceNodes.master.disconnect(); spaceNodes = null;
-  }
-
   function fetchSchool(){
     fetch("/api/school").then(function(r){ return r.json(); }).then(function(d){
       if (d.status === "success"){ renderSchool(d.school); renderWeekend(d.school); }
@@ -264,7 +242,7 @@
     zenAbandoning = false;
     $("zen-confirm").hidden = true;
     $("zen-overlay").hidden = true;
-    stopLoFi(); stopSpace(); stopAmbient();
+    stopLoFi(); stopAmbient();
     if (fullClean){
       zenActive = false;
       zenBlockId = null;
@@ -279,9 +257,6 @@
   function enterZenMode(block){
     resetZenState(false);
     zenActive = true; zenBlockId = block.id;
-    var zl = $("zen-lofi"), zs2 = $("zen-space");
-    if (zl) zl.classList.remove("on");
-    if (zs2) zs2.classList.remove("on");
     var zsub = $("zen-subject"), ztop = $("zen-topic"), zcd = $("zen-countdown");
     if (zsub) zsub.textContent = block.subject || "";
     if (ztop) ztop.textContent = block.topic || "";
@@ -1826,15 +1801,8 @@
       else b.classList.remove("on");
     });
   }
-  function silenceManualOsc(){
-    stopLoFi(); stopSpace();
-    var zl = $("zen-lofi"), zs = $("zen-space");
-    if (zl) zl.classList.remove("on");
-    if (zs) zs.classList.remove("on");
-  }
   function playAmbient(sound){
     stopAmbient();
-    silenceManualOsc();
     if (!sound || sound === "none"){ markAmbientButtons(); return; }
     if (sound === "lofi"){ startLoFi(); markAmbientButtons(); return; }
     var ctx = ensureAudio();
@@ -2380,23 +2348,6 @@
   });
   var _sc = $("stats-collapse");
   if (_sc) _sc.addEventListener("click", function(){ switchTab("wiz"); });
-  var _zlofi = $("zen-lofi");
-  if (_zlofi) _zlofi.addEventListener("click", function(){
-    var on = _zlofi.classList.toggle("on");
-    // Manual preset and picker share one channel: enabling one silences the other.
-    stopAmbient();
-    if (appSettings) appSettings.ambient_sound = "none";
-    markAmbientButtons();
-    if (on){ stopSpace(); if ($("zen-space")) $("zen-space").classList.remove("on"); startLoFi(); } else stopLoFi();
-  });
-  var _zspace = $("zen-space");
-  if (_zspace) _zspace.addEventListener("click", function(){
-    var on = _zspace.classList.toggle("on");
-    stopAmbient();
-    if (appSettings) appSettings.ambient_sound = "none";
-    markAmbientButtons();
-    if (on){ stopLoFi(); if ($("zen-lofi")) $("zen-lofi").classList.remove("on"); startSpace(); } else stopSpace();
-  });
   var _zab = $("zen-abandon");
   if (_zab) _zab.addEventListener("click", function(){
     if (!zenActive || !zenBlockId) return;
