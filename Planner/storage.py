@@ -88,7 +88,11 @@ DEFAULT_SETTINGS = {
     "win_end": "19:00",
     "duration_h": 2,
     "theme": "light",
+    "timer_theme": "none",
 }
+
+
+TIMER_THEMES = ("none", "beach", "forest", "space")
 
 
 _SCHEMA = """
@@ -612,8 +616,8 @@ def _settings_for(doc: dict) -> dict:
     """Merge stored settings over defaults with range validation.
 
     ``study_min`` is clamped to 15–120, ``break_min`` to 5–30,
-    ``duration_h`` to 1–12; invalid window times and themes fall back to
-    defaults. Never raises on corrupt input.
+    ``duration_h`` to 1–12; invalid window times, themes and timer themes
+    fall back to defaults. Never raises on corrupt input.
     """
     st = dict(DEFAULT_SETTINGS)
     saved = doc.get("settings")
@@ -639,6 +643,8 @@ def _settings_for(doc: dict) -> dict:
         st["win_end"] = DEFAULT_SETTINGS["win_end"]
     if str(st.get("theme")) not in ("light", "dark"):
         st["theme"] = DEFAULT_SETTINGS["theme"]
+    if str(st.get("timer_theme")) not in TIMER_THEMES:
+        st["timer_theme"] = DEFAULT_SETTINGS["timer_theme"]
     return st
 
 

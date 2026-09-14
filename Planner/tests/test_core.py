@@ -279,6 +279,18 @@ class SettingsValidationTests(unittest.TestCase):
         st = _settings_for({"settings": {"study_min": "bad"}})
         self.assertEqual(st["study_min"], 45)
 
+    def test_timer_theme_default_and_validation(self):
+        self.assertEqual(_settings_for({})["timer_theme"], "none")
+        self.assertEqual(
+            _settings_for({"settings": {"timer_theme": "forest"}})["timer_theme"],
+            "forest",
+        )
+        for bad in ("ocean", "", None, 123):
+            self.assertEqual(
+                _settings_for({"settings": {"timer_theme": bad}})["timer_theme"],
+                "none",
+            )
+
 
 class SaveExamsApiTests(unittest.TestCase):
     """Exercise POST /api/exams with an isolated SQLite store."""
@@ -432,6 +444,51 @@ class ExportApiTests(unittest.TestCase):
         self.assertIsInstance(body["data"], dict)
         self.assertIn("version", body)
         self.assertIn("exported_at", body)
+
+
+class TimerThemeApiTests(unittest.TestCase):
+    """timer_theme persists via settings and falls back to 'none'."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        os.environ["OZTUDY_DATA_DIR"] = self.tmp.name
+        import importlib
+
+        import storage as storage_mod
+
+        importlib.reload(storage_mod)
+        import app as app_mod
+
+        importlib.reload(app_mod)
+        self.app_mod = app_mod
+        app_mod.app.config.update(TESTING=True)
+        self.client = app_mod.app.test_client()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+        os.environ.pop("OZTUDY_DATA_DIR", None)
+        import importlib
+
+        import storage as storage_mod
+
+        importlib.reload(storage_mod)
+        import app as app_mod  # noqa: F401
+
+        importlib.reload(app_mod)
+
+    def test_default_is_none(self):
+        body = self.client.get("/api/settings").get_json()
+        self.assertEqual(body["settings"]["timer_theme"], "none")
+
+    def test_save_and_reject_invalid(self):
+        body = self.client.post(
+            "/api/settings", json={"timer_theme": "space"}
+        ).get_json()
+        self.assertEqual(body["settings"]["timer_theme"], "space")
+        body = self.client.post(
+            "/api/settings", json={"timer_theme": "volcano"}
+        ).get_json()
+        self.assertEqual(body["settings"]["timer_theme"], "none")
 
 
 if __name__ == "__main__":

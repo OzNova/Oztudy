@@ -288,6 +288,7 @@
     if (zcd) zcd.textContent = fmt(timerState.remainingSeconds || blockSeconds(block));
     var zf = $("zen-fill"); if (zf) zf.style.width = "0%";
     var zs = $("zen-status"); if (zs) zs.textContent = "Seans devam ediyor...";
+    applyTimerTheme(appSettings ? appSettings.timer_theme : "none");
     $("zen-overlay").hidden = false;
     ensureAudio();
   }
@@ -1655,6 +1656,30 @@
     else root.removeAttribute("data-theme");
   }
 
+  /* Calm timer backgrounds (Beach/Forest/Space/None). The CSS ::before photo
+     is fetched lazily — only when the data-timer-theme selector matches on
+     open. A JS Image() preload on first open avoids a flash; "none" keeps
+     the plain overlay. Same theme drives the Zen focus screen. */
+  var TIMER_THEME_IMAGES = {
+    beach: "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1600&q=60&auto=format&fit=crop",
+    forest: "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=1600&q=60&auto=format&fit=crop",
+    space: "https://images.unsplash.com/photo-1462331940025-496dfbfc7564?w=1600&q=60&auto=format&fit=crop"
+  };
+  var _timerThemePreloaded = {};
+  function applyTimerTheme(theme){
+    var ov = $("zen-overlay");
+    if (!ov) return;
+    if (!theme || theme === "none" || !TIMER_THEME_IMAGES[theme]){
+      ov.removeAttribute("data-timer-theme");
+      return;
+    }
+    if (!_timerThemePreloaded[theme] && typeof Image !== "undefined"){
+      _timerThemePreloaded[theme] = true;
+      try { var im = new Image(); im.src = TIMER_THEME_IMAGES[theme]; } catch(e){}
+    }
+    ov.setAttribute("data-timer-theme", theme);
+  }
+
   function fillSettingsForm(st){
     if (!st) return;
     var s = $("set-study"), br = $("set-break"), wS = $("set-win-s"), wE = $("set-win-e"), H = $("set-hours");
@@ -1663,6 +1688,8 @@
     if (wS) wS.value = st.win_start;
     if (wE) wE.value = st.win_end;
     if (H) H.value = st.duration_h;
+    var tt = $("set-timer-theme");
+    if (tt) tt.value = (st.timer_theme && TIMER_THEME_IMAGES[st.timer_theme]) ? st.timer_theme : "none";
     document.querySelectorAll("input[name='set-theme']").forEach(function(r){ r.checked = (r.value === st.theme); });
   }
 
@@ -1678,6 +1705,7 @@
       if (d.status !== "success") return;
       appSettings = d.settings;
       applyTheme(appSettings.theme);
+      applyTimerTheme(appSettings.timer_theme);
       fillSettingsForm(appSettings);
       applySettingsToWizard(appSettings);
     }).catch(function(){});
@@ -1997,6 +2025,9 @@
     st.win_start = wS ? wS.value : "17:00";
     st.win_end = wE ? wE.value : "21:00";
     st.duration_h = parseInt(H ? H.value : 4, 10) || 4;
+    var tts = $("set-timer-theme");
+    st.timer_theme = (tts && tts.value) || "none";
+    if (TIMER_THEME_IMAGES[st.timer_theme] === undefined && st.timer_theme !== "none") st.timer_theme = "none";
     var changed = st.study_min !== prevStudy || st.break_min !== prevBreak ||
                   (st.win_start + st.win_end) !== prevWin || st.duration_h !== prevDur;
     fetch("/api/settings", {
@@ -2007,6 +2038,7 @@
       if (d.status !== "success"){ setMsg("Ayarlar kaydedilemedi.", "err"); return; }
       appSettings = d.settings;
       applyTheme(appSettings.theme);
+      applyTimerTheme(appSettings.timer_theme);
       fillSettingsForm(appSettings);
       applySettingsToWizard(appSettings);
       if (changed){ rebuildPlanWithSettings(); }

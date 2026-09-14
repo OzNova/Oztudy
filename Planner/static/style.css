@@ -545,8 +545,17 @@ body{background-color:var(--bg);color:var(--text);font-family:var(--font);font-s
 .modal .m-close:hover{background:var(--primary-strong)}
 
 /* ============ Zen mode ============ */
-.zen-overlay{position:fixed;inset:0;z-index:9999;background:rgba(10,10,12,.97);display:flex;align-items:center;justify-content:center;color:#F9FAFB;font-family:var(--font)}
+.zen-overlay{position:fixed;inset:0;z-index:9999;background:rgba(10,10,12,.97);display:flex;align-items:center;justify-content:center;color:#F9FAFB;font-family:var(--font);overflow:hidden}
 .zen-overlay[hidden]{display:none}
+/* Calm timer backgrounds: photo on a ::before layer (lazy-fetched only when
+   the data-timer-theme selector matches) + rgba(0,0,0,.35) overlay for text
+   contrast + CSS-gradient fallback when offline. Fades in via opacity. */
+.zen-overlay::before{content:"";position:absolute;inset:0;opacity:0;transition:opacity .6s ease;background-size:cover;background-position:center;pointer-events:none}
+.zen-overlay[data-timer-theme="beach"]::before{opacity:1;background-image:linear-gradient(rgba(0,0,0,.35),rgba(0,0,0,.35)),url("https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1600&q=60&auto=format&fit=crop"),linear-gradient(135deg,#0369a1 0%,#38bdf8 45%,#fef3c7 100%)}
+.zen-overlay[data-timer-theme="forest"]::before{opacity:1;background-image:linear-gradient(rgba(0,0,0,.35),rgba(0,0,0,.35)),url("https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=1600&q=60&auto=format&fit=crop"),linear-gradient(135deg,#052e16 0%,#166534 55%,#4d7c0f 100%)}
+.zen-overlay[data-timer-theme="space"]::before{opacity:1;background-image:linear-gradient(rgba(0,0,0,.35),rgba(0,0,0,.35)),url("https://images.unsplash.com/photo-1462331940025-496dfbfc7564?w=1600&q=60&auto=format&fit=crop"),linear-gradient(135deg,#020617 0%,#1e1b4b 55%,#4c1d95 100%)}
+.zen-overlay.zen-confirm::before{display:none}
+.zen-overlay .zen-inner{position:relative;z-index:1}
 .zen-inner{text-align:center;max-width:420px;width:92%;animation:modalIn .3s ease}
 .zen-subject{font-size:11px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:rgba(255,255,255,.35);margin-bottom:4px}
 .zen-topic{font-size:21px;font-weight:700;color:#A5B4FC;margin-bottom:26px;line-height:1.35;letter-spacing:-0.3px}

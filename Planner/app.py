@@ -95,7 +95,7 @@ def save_settings():
     with LOCK:
         doc = _load_doc()
         saved = dict(doc.get("settings") or {})
-        for key in ("study_min", "break_min", "win_start", "win_end", "duration_h", "theme"):
+        for key in ("study_min", "break_min", "win_start", "win_end", "duration_h", "theme", "timer_theme"):
             if key in body:
                 saved[key] = body[key]
         doc["settings"] = saved
