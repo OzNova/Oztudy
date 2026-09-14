@@ -63,7 +63,9 @@ def _open_log() -> None:
         # backend tracebacks are preserved alongside launcher logs.
         log_fp = open(LOG_FILE, "a", buffering=1, encoding="utf-8")
     except OSError as exc:
-        print(f"[planner] cannot open log file {LOG_FILE}: {exc}", file=sys.stderr)
+        # Logger already has the stderr handler at this point, so route
+        # through it instead of print() to keep a single logging path.
+        logger.error("cannot open log file %s: %s", LOG_FILE, exc)
 
 
 def _free_port():

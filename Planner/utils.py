@@ -51,6 +51,13 @@ def _now_min() -> int:
 
 
 def _weekday_short(daykey: str) -> str:
-    """Return the Turkish 3-letter weekday for a ``YYYY-MM-DD`` key."""
+    """Return the Turkish 3-letter weekday for a ``YYYY-MM-DD`` key.
+
+    Returns ``"?"`` for malformed input instead of raising, so analytics
+    endpoints never 500 on corrupt history entries.
+    """
     names = ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"]
-    return names[datetime.strptime(daykey, "%Y-%m-%d").weekday()]
+    try:
+        return names[datetime.strptime(str(daykey), "%Y-%m-%d").weekday()]
+    except (ValueError, TypeError):
+        return "?"

@@ -43,6 +43,23 @@ from version import __version__
 app = Flask(__name__)
 
 
+def _safe_int(value, default: int = 0) -> int:
+    """Best-effort int coercion for stored analytics fields (never raises)."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _valid_day(value) -> bool:
+    """Return True when ``value`` is a real ``YYYY-MM-DD`` calendar date."""
+    try:
+        datetime.strptime(str(value), "%Y-%m-%d")
+        return True
+    except (ValueError, TypeError):
+        return False
+
+
 @app.get("/")
 def index():
     return render_template("index.html")
@@ -461,7 +478,8 @@ def stats():
         doc = _load_doc()
     now_ts = int(time.time())
     today = _day_key(now_ts)
-    hist = doc.get("history", [])
+    raw_hist = doc.get("history", [])
+    hist = raw_hist if isinstance(raw_hist, list) else []
     today_dt = datetime.fromtimestamp(now_ts)
     week_monday = today_dt - timedelta(days=today_dt.weekday())
     day_keys = [(week_monday + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(7)]
@@ -470,45 +488,58 @@ def stats():
     plan = doc.get("plan")
     plan_blocks = plan.get("blocks", []) if isinstance(plan, dict) else []
     done_blocks = [
-        b for b in plan_blocks
+        b for b in plan_blocks if isinstance(b, dict)
         if b.get("type") == "study" and b.get("status") == "done"
     ]
 
     # A stats reset wipes history and excludes blocks completed before it, so
     # analytics restart from zero even though the timeline stays untouched.
-    reset_ts = int(doc.get("stats_reset_ts") or 0)
+    reset_ts = _safe_int(doc.get("stats_reset_ts") or 0)
     if reset_ts:
         done_blocks = [
             b for b in done_blocks
-            if int(b.get("done_ts") or 0) > reset_ts
+            if _safe_int(b.get("done_ts") or 0) > reset_ts
         ]
 
     def _sum(entries, field):
-        return sum(int(e.get(field, 0)) for e in entries)
+        total = 0
+        for e in entries:
+            if isinstance(e, dict):
+                total += _safe_int(e.get(field, 0))
+        return total
+
+    def _history_minutes(entries):
+        total = 0
+        for h in entries:
+            if isinstance(h, dict):
+                total += _safe_int(h.get("minutes", 0))
+        return total
 
     # Today: authoritative from live completed blocks (per-block sums, no
     # subject/topic collapse), falling back to the history log with no plan.
     use_plan_today = bool(done_blocks)
     if use_plan_today:
-        today_min = sum(int(b.get("duration", 0)) for b in done_blocks)
+        today_min = sum(_safe_int(b.get("duration", 0)) for b in done_blocks)
         today_done = len(done_blocks)
-        today_q = sum(int(b.get("questions") or 0) for b in done_blocks)
-        today_p = sum(int(b.get("pages") or 0) for b in done_blocks)
+        today_q = sum(_safe_int(b.get("questions") or 0) for b in done_blocks)
+        today_p = sum(_safe_int(b.get("pages") or 0) for b in done_blocks)
     else:
-        today_ents = [h for h in hist if h.get("day") == today]
-        today_min = sum(int(h.get("minutes", 0)) for h in today_ents)
+        today_ents = [h for h in hist if isinstance(h, dict) and h.get("day") == today]
+        today_min = _history_minutes(today_ents)
         today_done = len(today_ents)
         today_q = _sum(today_ents, "questions")
         today_p = _sum(today_ents, "pages")
 
     # 7-day series from history, with today overridden by live plan numbers.
+    # Malformed history entries (bad day strings / non-numeric minutes) are
+    # skipped so they can never 500 the endpoint.
     days = []
     for k in day_keys:
-        ents = [h for h in hist if h.get("day") == k]
+        ents = [h for h in hist if isinstance(h, dict) and h.get("day") == k]
         days.append({
             "day": _weekday_short(k),
             "done": len(ents),
-            "minutes": sum(int(h.get("minutes", 0)) for h in ents),
+            "minutes": _history_minutes(ents),
             "questions": _sum(ents, "questions"),
             "pages": _sum(ents, "pages"),
         })
@@ -533,22 +564,24 @@ def stats():
     # completed blocks folded in from the live plan to avoid schedule reuse.
     subjects = {}
     for h in hist:
+        if not isinstance(h, dict):
+            continue
         if h.get("day") not in day_keys_set:
             continue
         if use_plan_today and h.get("day") == today:
             continue
         s = h.get("subject") or "Genel"
         row = subjects.setdefault(s, {"minutes": 0, "questions": 0, "pages": 0})
-        row["minutes"] += int(h.get("minutes", 0))
-        row["questions"] += int(h.get("questions", 0))
-        row["pages"] += int(h.get("pages", 0))
+        row["minutes"] += _safe_int(h.get("minutes", 0))
+        row["questions"] += _safe_int(h.get("questions", 0))
+        row["pages"] += _safe_int(h.get("pages", 0))
     if use_plan_today:
         for b in done_blocks:
             s = b.get("subject") or "Genel"
             row = subjects.setdefault(s, {"minutes": 0, "questions": 0, "pages": 0})
-            row["minutes"] += int(b.get("duration", 0))
-            row["questions"] += int(b.get("questions") or 0)
-            row["pages"] += int(b.get("pages") or 0)
+            row["minutes"] += _safe_int(b.get("duration", 0))
+            row["questions"] += _safe_int(b.get("questions") or 0)
+            row["pages"] += _safe_int(b.get("pages") or 0)
     subjects_list = [
         {
             "subject": k,
@@ -617,7 +650,9 @@ def report():
     now_ts = int(time.time())
     today = _day_key(now_ts)
     today_dt = datetime.fromtimestamp(now_ts)
-    hist = doc.get("history", [])
+    raw_hist = doc.get("history", [])
+    hist = raw_hist if isinstance(raw_hist, list) else []
+    known: list[str] = []
 
     if rng == "week":
         monday = today_dt - timedelta(days=today_dt.weekday())
@@ -630,7 +665,12 @@ def report():
         day_to = today
         day_keys = [(start + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(30)]
     else:
-        known = sorted({h.get("day") for h in hist if h.get("day")})
+        # Only well-formed calendar dates participate in the all-time range;
+        # malformed history days are ignored instead of poisoning day_from.
+        known = sorted({
+            h.get("day") for h in hist
+            if isinstance(h, dict) and _valid_day(h.get("day"))
+        })
         if known and known[0] < today:
             day_from = known[0]
         else:
@@ -642,15 +682,15 @@ def report():
     # subject/topic collapse), mirroring /api/stats.
     plan = doc.get("plan")
     blocks = plan.get("blocks", []) if isinstance(plan, dict) else []
-    reset_ts = int(doc.get("stats_reset_ts") or 0)
+    reset_ts = _safe_int(doc.get("stats_reset_ts") or 0)
     done_blocks = [
-        b for b in blocks
+        b for b in blocks if isinstance(b, dict)
         if b.get("type") == "study" and b.get("status") == "done"
     ]
     if reset_ts:
         done_blocks = [
             b for b in done_blocks
-            if int(b.get("done_ts") or 0) > reset_ts
+            if _safe_int(b.get("done_ts") or 0) > reset_ts
         ]
     use_plan_today = bool(done_blocks) and day_from <= today <= day_to
 
@@ -658,25 +698,27 @@ def report():
         return {"minutes": 0, "sessions": 0, "questions": 0, "pages": 0}
 
     def _add(row, minutes, questions, pages, sessions=1):
-        row["minutes"] += minutes
-        row["sessions"] += sessions
-        row["questions"] += questions
-        row["pages"] += pages
+        row["minutes"] += _safe_int(minutes)
+        row["sessions"] += _safe_int(sessions)
+        row["questions"] += _safe_int(questions)
+        row["pages"] += _safe_int(pages)
 
     per_day = {}
     subjects = {}
     topics = {}
     for h in hist:
+        if not isinstance(h, dict):
+            continue
         k = h.get("day")
-        if not k or k < day_from or k > day_to:
+        if not k or not _valid_day(k) or k < day_from or k > day_to:
             continue
         if use_plan_today and k == today:
             continue
         s = h.get("subject") or "Genel"
         t = h.get("topic") or "—"
-        mins = int(h.get("minutes", 0))
-        q = int(h.get("questions", 0))
-        p = int(h.get("pages", 0))
+        mins = _safe_int(h.get("minutes", 0))
+        q = _safe_int(h.get("questions", 0))
+        p = _safe_int(h.get("pages", 0))
         _add(per_day.setdefault(k, _zero()), mins, q, p)
         _add(subjects.setdefault(s, _zero()), mins, q, p)
         _add(topics.setdefault((s, t), _zero()), mins, q, p)
@@ -684,14 +726,22 @@ def report():
         for b in done_blocks:
             s = b.get("subject") or "Genel"
             t = b.get("topic") or "—"
-            mins = int(b.get("duration", 0))
-            q = int(b.get("questions") or 0)
-            p = int(b.get("pages") or 0)
+            mins = _safe_int(b.get("duration", 0))
+            q = _safe_int(b.get("questions") or 0)
+            p = _safe_int(b.get("pages") or 0)
             _add(per_day.setdefault(today, _zero()), mins, q, p)
             _add(subjects.setdefault(s, _zero()), mins, q, p)
             _add(topics.setdefault((s, t), _zero()), mins, q, p)
 
     # Day series: daily buckets for week/month, weekly buckets for all-time.
+    # Every strptime is guarded so a corrupt day key degrades to "?" / today
+    # instead of raising a 500.
+    def _day_num(key: str) -> str:
+        try:
+            return str(datetime.strptime(key, "%Y-%m-%d").day)
+        except (ValueError, TypeError):
+            return "?"
+
     days = []
     if day_keys is not None:
         for k in day_keys:
@@ -700,14 +750,30 @@ def report():
             if rng == "week":
                 row["label"] = _weekday_short(k)
             else:
-                row["label"] = str(datetime.strptime(k, "%Y-%m-%d").day)
+                row["label"] = _day_num(k)
             days.append(row)
-        first_dt = datetime.strptime(day_from, "%Y-%m-%d")
-        last_dt = datetime.strptime(day_to, "%Y-%m-%d")
+        try:
+            first_dt = datetime.strptime(day_from, "%Y-%m-%d")
+        except (ValueError, TypeError):
+            first_dt = today_dt
+            day_from = today
+        try:
+            last_dt = datetime.strptime(day_to, "%Y-%m-%d")
+        except (ValueError, TypeError):
+            last_dt = today_dt
+            day_to = today
         days_total = (last_dt - first_dt).days + 1
     else:
-        first_dt = datetime.strptime(day_from, "%Y-%m-%d")
-        last_dt = datetime.strptime(day_to, "%Y-%m-%d")
+        try:
+            first_dt = datetime.strptime(day_from, "%Y-%m-%d")
+        except (ValueError, TypeError):
+            first_dt = today_dt
+            day_from = today
+        try:
+            last_dt = datetime.strptime(day_to, "%Y-%m-%d")
+        except (ValueError, TypeError):
+            last_dt = today_dt
+            day_to = today
         days_total = (last_dt - first_dt).days + 1
         weeks = {}
         cur = first_dt
@@ -754,9 +820,10 @@ def report():
     ]
 
     best = max(days, key=lambda d: d["minutes"]) if days and total_min else None
-    g = _game(doc)
-    xp = int(g.get("xp", 0))
-    badges = sorted(g.get("badges", []))
+    g = _game(doc) if isinstance(doc.get("game", {}), dict) or "game" not in doc else {}
+    xp = _safe_int(g.get("xp", 0))
+    raw_badges = g.get("badges", [])
+    badges = sorted(raw_badges) if isinstance(raw_badges, list) else []
 
     first_lbl = _tr_date(first_dt)
     last_lbl = f"{_tr_date(last_dt)} {last_dt.year}"
@@ -1003,6 +1070,19 @@ def catchup():
     out["plan"] = doc.get("plan")
     out["summary"] = summary
     return jsonify(out)
+
+
+@app.get("/api/export")
+def export_data():
+    """Return the full planner document as JSON (backup / portability)."""
+    with LOCK:
+        doc = _load_doc()
+    return jsonify({
+        "status": "success",
+        "version": __version__,
+        "exported_at": _day_key(int(time.time())),
+        "data": doc,
+    })
 
 
 if __name__ == "__main__":

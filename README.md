@@ -126,6 +126,7 @@ Base URL `http://127.0.0.1:5000`. All responses are JSON with
 | POST | `/api/reviews/schedule` | — | `{plan, message}` |
 | GET | `/api/overdue` | — | `{overdue, count}` |
 | POST | `/api/catchup` | — | `{plan, summary}` |
+| GET | `/api/export` | — | `{version, exported_at, data}` |
 
 Notes:
 

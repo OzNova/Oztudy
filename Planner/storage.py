@@ -11,6 +11,8 @@ connections with a busy timeout. Readers never see torn writes, and a crash
 mid-save rolls back instead of corrupting the store.
 """
 import json
+import logging
+import logging.handlers
 import os
 import sqlite3
 import sys
@@ -19,6 +21,46 @@ import time
 from datetime import datetime
 
 from utils import REVIEW_BLOCK, _day_key, _minutes
+
+
+logger = logging.getLogger("oztudy.storage")
+
+
+def _log_file() -> str:
+    """Launcher-compatible log path (``error.log`` next to the app by default)."""
+    base = os.environ.get("OZTUDY_DATA_DIR", ROOT)
+    return os.path.join(base, "error.log")
+
+
+def _ensure_logger() -> logging.Logger:
+    """Attach stderr + rotating-file handlers once (idempotent, test-safe)."""
+    if getattr(_ensure_logger, "_configured_for", None) == _log_file() and logger.handlers:
+        return logger
+    # Drop stale file handlers when DATA_DIR changes (e.g. isolated tests).
+    for h in list(logger.handlers):
+        if isinstance(h, logging.handlers.RotatingFileHandler):
+            logger.removeHandler(h)
+            try:
+                h.close()
+            except Exception:
+                pass
+    if not any(isinstance(h, logging.StreamHandler) and not isinstance(h, logging.handlers.RotatingFileHandler) for h in logger.handlers):
+        logger.addHandler(logging.StreamHandler(sys.stderr))
+    try:
+        log_path = _log_file()
+        if os.path.dirname(log_path) and os.path.dirname(log_path) != ROOT:
+            os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        fh = logging.handlers.RotatingFileHandler(
+            log_path, maxBytes=512 * 1024, backupCount=3, encoding="utf-8"
+        )
+        fh.setFormatter(logging.Formatter("%(asctime)s [planner] %(message)s"))
+        logger.addHandler(fh)
+    except OSError:
+        pass
+    if logger.level == logging.NOTSET:
+        logger.setLevel(logging.INFO)
+    _ensure_logger._configured_for = _log_file()  # type: ignore[attr-defined]
+    return logger
 
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -202,21 +244,18 @@ def _legacy_json_load():
     except FileNotFoundError:
         return {}
     except OSError as exc:
-        print(f"[planner] data file unreadable ({exc}); starting with empty doc",
-              file=sys.stderr)
+        _ensure_logger().warning("data file unreadable (%s); starting with empty doc", exc)
         return {}
     except ValueError as exc:
         try:
             if os.path.exists(DATA_FILE):
                 backup = DATA_FILE + ".corrupt." + datetime.now().strftime("%Y%m%d-%H%M%S")
                 os.replace(DATA_FILE, backup)
-                print(f"[planner] WARNING: corrupt planner.json backed up to {backup}: {exc}",
-                      file=sys.stderr)
+                _ensure_logger().warning("corrupt planner.json backed up to %s: %s", backup, exc)
             else:
-                print(f"[planner] WARNING: corrupt planner.json: {exc}", file=sys.stderr)
+                _ensure_logger().warning("corrupt planner.json: %s", exc)
         except OSError as backup_exc:
-            print(f"[planner] WARNING: could not back up corrupt planner.json: {backup_exc}",
-                  file=sys.stderr)
+            _ensure_logger().warning("could not back up corrupt planner.json: %s", backup_exc)
         return {}
 
 
@@ -230,11 +269,9 @@ def _maybe_migrate(conn):
         try:
             backup = DATA_FILE + ".migrated." + datetime.now().strftime("%Y%m%d-%H%M%S")
             os.replace(DATA_FILE, backup)
-            print(f"[planner] migrated planner.json to SQLite; backup at {backup}",
-                  file=sys.stderr)
+            _ensure_logger().info("migrated planner.json to SQLite; backup at %s", backup)
         except OSError as exc:
-            print(f"[planner] WARNING: could not archive migrated planner.json: {exc}",
-                  file=sys.stderr)
+            _ensure_logger().warning("could not archive migrated planner.json: %s", exc)
     conn.execute("INSERT OR REPLACE INTO kv(key, value) VALUES('schema_version', ?)",
                  (str(SCHEMA_VERSION),))
     conn.commit()

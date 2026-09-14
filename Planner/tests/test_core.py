@@ -335,5 +335,104 @@ class SaveExamsApiTests(unittest.TestCase):
         self.assertEqual(body["exams"][0]["start"], "2026-12-01")
 
 
+class MalformedHistoryApiTests(unittest.TestCase):
+    """Corrupt history entries must degrade gracefully, never 500."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        os.environ["OZTUDY_DATA_DIR"] = self.tmp.name
+        import importlib
+
+        import storage as storage_mod
+
+        importlib.reload(storage_mod)
+        import app as app_mod
+
+        importlib.reload(app_mod)
+        self.app_mod = app_mod
+        self.storage_mod = storage_mod
+        app_mod.app.config.update(TESTING=True)
+        self.client = app_mod.app.test_client()
+        with storage_mod.LOCK:
+            doc = storage_mod._load_doc()
+            doc["history"] = [
+                {"day": "not-a-date", "subject": "MATH", "topic": "Bad",
+                 "minutes": "NaN", "questions": "x", "pages": None, "ts": 1},
+                {"day": "2026-13-99", "subject": "ENG", "topic": "Bad2",
+                 "minutes": 10, "questions": 1, "pages": 1, "ts": 2},
+                "not-a-dict",
+                {"subject": "NoDay", "minutes": 5},
+            ]
+            storage_mod._save_doc(doc)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+        os.environ.pop("OZTUDY_DATA_DIR", None)
+        import importlib
+
+        import storage as storage_mod
+
+        importlib.reload(storage_mod)
+        import app as app_mod  # noqa: F401
+
+        importlib.reload(app_mod)
+
+    def test_stats_survives_malformed_history(self):
+        resp = self.client.get("/api/stats")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json()["status"], "success")
+
+    def test_report_survives_malformed_history(self):
+        for rng in ("week", "month", "all"):
+            resp = self.client.get(f"/api/report?range={rng}")
+            self.assertEqual(resp.status_code, 200, rng)
+            self.assertEqual(resp.get_json()["status"], "success", rng)
+
+    def test_weekday_helper_never_raises(self):
+        self.assertEqual(_weekday_short("not-a-date"), "?")
+        self.assertEqual(_weekday_short(None), "?")
+
+
+class ExportApiTests(unittest.TestCase):
+    """GET /api/export returns the full document without changing shape."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        os.environ["OZTUDY_DATA_DIR"] = self.tmp.name
+        import importlib
+
+        import storage as storage_mod
+
+        importlib.reload(storage_mod)
+        import app as app_mod
+
+        importlib.reload(app_mod)
+        self.app_mod = app_mod
+        app_mod.app.config.update(TESTING=True)
+        self.client = app_mod.app.test_client()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+        os.environ.pop("OZTUDY_DATA_DIR", None)
+        import importlib
+
+        import storage as storage_mod
+
+        importlib.reload(storage_mod)
+        import app as app_mod  # noqa: F401
+
+        importlib.reload(app_mod)
+
+    def test_export_returns_full_doc(self):
+        resp = self.client.get("/api/export")
+        self.assertEqual(resp.status_code, 200)
+        body = resp.get_json()
+        self.assertEqual(body["status"], "success")
+        self.assertIn("data", body)
+        self.assertIsInstance(body["data"], dict)
+        self.assertIn("version", body)
+        self.assertIn("exported_at", body)
+
+
 if __name__ == "__main__":
     unittest.main()

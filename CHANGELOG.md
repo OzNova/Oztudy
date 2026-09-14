@@ -9,12 +9,35 @@ surfaced in the app header, `GET /api/version`, and `run_desktop.py --version`.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-14
+
 ### Added
 
 - Study report (`Rapor` tab + `GET /api/report?range=week|month|all`):
   total hours, sessions, questions, pages, daily average, consistency,
   streak, best day, top subject/level, daily activity chart, subject
   distribution, top-8 topics, and a print stylesheet for Yazdır/PDF export.
+- Full-data export: `GET /api/export` returns `{status, version,
+  exported_at, data}` with the whole planner document, plus an `Export`
+  button in Settings that downloads it as `oztudy-export-YYYY-MM-DD.json`.
+- CI: `.github/workflows/tests.yml` runs the unittest suite on push/PR
+  (Python 3.10 and 3.12).
+- Concurrency stress test (`Planner/tests/test_concurrency.py`): parallel
+  readers/writers hammer the SQLite store to verify the LOCK + WAL +
+  busy-timeout model.
+
+### Fixed
+
+- Corrupt history can no longer 500 analytics: `/api/stats` and
+  `/api/report` skip malformed day strings and coerce numeric fields via
+  safe helpers; `_weekday_short()` returns `"?"` on bad input.
+- Request validation hardening: `POST /api/exams` rejects `start > end`;
+  `/api/blocks/adjust` and `/api/plan` return 400 on non-numeric
+  `offset`/`delta`/`duration_h` instead of 500.
+- Defensive stats: `_stats()` ignores non-study/pushed blocks and validates
+  durations; `_repair_plan()` resets invalid `type`/`status`/`confidence`;
+  `_next_exam()` skips malformed exam entries; `_gather_overdue()` skips
+  entries without subject/topic.
 
 ### Changed
 
@@ -24,6 +47,13 @@ surfaced in the app header, `GET /api/version`, and `run_desktop.py --version`.
   `Formula/oztudy.rb` was removed to avoid drift. Note: Homebrew 6+ requires
   formulae to live in a tap, and third-party taps need a one-time
   `brew trust oznova/oztudy`.
+- Logging: `storage.py` migration/corrupt-JSON paths and the
+  `run_desktop.py` log-open failure now go through `logging` with a
+  `RotatingFileHandler` (512 KB × 3) instead of `print(..., file=sys.stderr)`.
+- Named constants (`MIN_PLAN_WINDOW_MIN`, `SECONDS_PER_DAY`,
+  `MINUTES_PER_DAY`) replace magic numbers; type hints + docstrings on
+  `build_plan`, `_stats`, `_next_exam`, `_habit_streak`, `_settings_for`,
+  `_repair_plan`, and date helpers (Python 3.10+).
 
 ## [1.0.1] - 2026-09-13
 
@@ -92,6 +122,7 @@ First packaged release: Homebrew install, versioning, and changelog.
 - `requirements.txt` gains `psutil` for cross-platform port management.
 - README documents Homebrew install, data layout, and project structure.
 
-[Unreleased]: https://github.com/OzNova/Oztudy/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/OzNova/Oztudy/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/OzNova/Oztudy/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/OzNova/Oztudy/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/OzNova/Oztudy/releases/tag/v1.0.0

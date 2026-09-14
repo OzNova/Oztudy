@@ -2047,6 +2047,20 @@
   if (_setClose) _setClose.addEventListener("click", function(){ switchTab("wiz"); });
   var _setSave = $("settings-save");
   if (_setSave) _setSave.addEventListener("click", function(){ saveSettings(); });
+  var _expBtn = $("export-btn");
+  if (_expBtn) _expBtn.addEventListener("click", function(){
+    fetch("/api/export").then(function(r){ return r.json(); }).then(function(d){
+      if (!d || d.status !== "success") { setMsg("Export başarısız.", "err"); return; }
+      var blob = new Blob([JSON.stringify(d, null, 2)], { type: "application/json" });
+      var a = document.createElement("a");
+      var day = (d.exported_at || new Date().toISOString().slice(0, 10));
+      a.href = URL.createObjectURL(blob);
+      a.download = "oztudy-export-" + day + ".json";
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 500);
+    }).catch(function(){ setMsg("Bağlantı hatası.", "err"); });
+  });
   var _sc = $("stats-collapse");
   if (_sc) _sc.addEventListener("click", function(){ switchTab("wiz"); });
   var _zlofi = $("zen-lofi");
