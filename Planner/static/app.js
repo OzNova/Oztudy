@@ -264,7 +264,7 @@
     zenAbandoning = false;
     $("zen-confirm").hidden = true;
     $("zen-overlay").hidden = true;
-    stopLoFi(); stopSpace();
+    stopLoFi(); stopSpace(); stopAmbient();
     if (fullClean){
       zenActive = false;
       zenBlockId = null;
@@ -290,6 +290,7 @@
     var zs = $("zen-status"); if (zs) zs.textContent = "Seans devam ediyor...";
     applyTimerTheme(appSettings ? appSettings.timer_theme : "none");
     $("zen-overlay").hidden = false;
+    playAmbient(currentAmbient());
     ensureAudio();
   }
   function exitZenMode(){
@@ -903,6 +904,8 @@
       if (d.message) setMsg(d.message, "ok");
       fetchDrawer();
       fetchGame();
+      // FEATURE 1: timer-completed study block → ask difficulty.
+      if (action === "done") maybeFeedback(d.plan, b.id);
     }).catch(function(){ setMsg("Bağlantı hatası.", "err"); });
   }
 
@@ -1417,6 +1420,8 @@
       $("st-qsub").textContent = d.week.pages + " okuma sayfası";
       renderSubjectBars(d.subjects);
       renderDayBars(d.days);
+      fetchPeak();
+      fetchHeatmap();
     }).catch(function(){});
   }
 
@@ -1645,8 +1650,187 @@
       if (d.hasOwnProperty("weak") || d.hasOwnProperty("tomorrow")) renderDrawer(d);
       else fetchDrawer();
       fetchGame();
+      // FEATURE 1: freshly completed study block → ask difficulty.
+      if (payload && payload.action === "done" && !payload.zen_abandon) maybeFeedback(d.plan, payload.id);
       if (after) after(d);
     }).catch(function(){ setMsg("Bağlantı hatası.", "err"); });
+  }
+
+  /* ============ FEATURE 1: Dynamic Topic Confidence ============ */
+  var _feedbackBlockId = null;
+  function maybeFeedback(plan, blockId){
+    if (!plan || !plan.blocks || !blockId) return;
+    if ($("feedback-overlay") && $("feedback-overlay").classList.contains("show")) return;
+    var hit = null;
+    plan.blocks.forEach(function(b){ if (b.id === blockId) hit = b; });
+    if (hit && hit.type === "study" && hit.status === "done" && !hit.zen_abandon) openFeedbackModal(blockId);
+  }
+  function openFeedbackModal(blockId){
+    _feedbackBlockId = blockId;
+    var btns = document.querySelectorAll("#feedback-overlay .feedback-btns button");
+    Array.prototype.forEach.call(btns, function(b){ b.disabled = false; });
+    $("feedback-overlay").classList.add("show");
+  }
+  function closeFeedbackModal(){
+    _feedbackBlockId = null;
+    var o = $("feedback-overlay");
+    if (o) o.classList.remove("show");
+  }
+  function showToast(text){
+    var t = $("toast");
+    if (!t) return;
+    t.textContent = text;
+    t.classList.add("show");
+    clearTimeout(t._h);
+    t._h = setTimeout(function(){ t.classList.remove("show"); }, 2600);
+  }
+  function sendFeedback(difficulty){
+    var id = _feedbackBlockId;
+    if (!id) return;
+    var btns = document.querySelectorAll("#feedback-overlay .feedback-btns button");
+    Array.prototype.forEach.call(btns, function(b){ b.disabled = true; });
+    fetch("/api/blocks/" + encodeURIComponent(id) + "/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ difficulty: difficulty })
+    }).then(function(r){ return r.json(); }).then(function(d){
+      Array.prototype.forEach.call(btns, function(b){ b.disabled = false; });
+      if (d.status !== "success"){ setMsg(d.message || "Hata oluştu.", "err"); return; }
+      closeFeedbackModal();
+      showToast("Anladım! Programını ayarlayacağım.");
+      if (d.plan) renderPlan(d.plan);
+    }).catch(function(){
+      Array.prototype.forEach.call(btns, function(b){ b.disabled = false; });
+      setMsg("Bağlantı hatası.", "err");
+    });
+  }
+
+  /* ============ FEATURE 2: Peak Performance Mapping ============ */
+  function fetchPeak(){
+    var box = $("peak-chart"), ins = $("peak-insight");
+    if (!box) return;
+    fetch("/api/insights/peak").then(function(r){ return r.json(); }).then(function(d){
+      if (!d || d.status !== "success") return;
+      box.innerHTML = "";
+      var empty = !d.best_hours.length && !d.worst_hours.length;
+      if (empty){
+        box.innerHTML = "<div class='empty' style='padding:8px 2px;font-size:12px'>" + d.insight + "</div>";
+        if (ins) ins.hidden = true;
+        return;
+      }
+      (d.hourly_stats || []).forEach(function(s){
+        var bar = document.createElement("div");
+        bar.className = "peak-bar " + (s.rate > 70 ? "good" : (s.rate >= 40 ? "mid" : "bad"));
+        bar.title = s.hour + ":00 — %" + s.rate + " tamamlama";
+        var fill = document.createElement("i");
+        fill.style.height = Math.max(4, Math.round(s.rate * 0.9)) + "px";
+        var lab = document.createElement("b");
+        lab.textContent = s.hour;
+        bar.appendChild(fill);
+        bar.appendChild(lab);
+        box.appendChild(bar);
+      });
+      if (ins){ ins.textContent = d.insight; ins.hidden = false; }
+    }).catch(function(){});
+  }
+
+  /* ============ FEATURE 4: Study Heatmap ============ */
+  var _heatmapData = null;
+  var _TR_MONTHS = ["Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"];
+  function heatmapColor(min){
+    if (min >= 121) return "hm-4";
+    if (min >= 61) return "hm-3";
+    if (min >= 31) return "hm-2";
+    if (min >= 1) return "hm-1";
+    return "hm-0";
+  }
+  function heatmapTip(iso, min){
+    var p = String(iso).split("-");
+    var dt = new Date(parseInt(p[0], 10), parseInt(p[1], 10) - 1, parseInt(p[2], 10));
+    return dt.getDate() + " " + _TR_MONTHS[dt.getMonth()] + " — " + min + " dk";
+  }
+  function renderHeatmap(){
+    var grid = $("heatmap-grid");
+    if (!grid || !_heatmapData) return;
+    var weeks = (window.innerWidth && window.innerWidth < 768) ? 4 : 12;
+    var data = _heatmapData.slice(-weeks * 7);
+    grid.innerHTML = "";
+    if (data.length){
+      var first = new Date(data[0].day + "T12:00:00");
+      var pad = (first.getDay() + 6) % 7; // Monday-first offset
+      for (var i = 0; i < pad; i++){
+        var ph = document.createElement("i");
+        ph.className = "hm";
+        ph.style.visibility = "hidden";
+        grid.appendChild(ph);
+      }
+    }
+    data.forEach(function(cell){
+      var c = document.createElement("i");
+      c.className = "hm " + heatmapColor(cell.minutes);
+      c.title = heatmapTip(cell.day, cell.minutes);
+      grid.appendChild(c);
+    });
+  }
+  function fetchHeatmap(){
+    if (!$("heatmap-grid")) return;
+    fetch("/api/stats/heatmap").then(function(r){ return r.json(); }).then(function(d){
+      if (!d || d.status !== "success" || !d.data) return;
+      _heatmapData = d.data;
+      renderHeatmap();
+    }).catch(function(){});
+  }
+  var _hmResizeT = null;
+  window.addEventListener("resize", function(){
+    clearTimeout(_hmResizeT);
+    _hmResizeT = setTimeout(renderHeatmap, 200);
+  });
+
+  /* ============ FEATURE 3: Ambient Focus Sounds ============ */
+  var AMBIENT_URLS = {
+    rain: "https://cdn.pixabay.com/audio/2022/05/27/audio_2e6e0e1e8f.mp3",
+    lofi: "https://cdn.pixabay.com/audio/2022/10/25/audio_9465e2e1c1.mp3",
+    library: "https://cdn.pixabay.com/audio/2021/08/09/audio_c8c8a73467.mp3",
+    whitenoise: "https://cdn.pixabay.com/audio/2022/03/10/audio_c8f0b6a5f1.mp3"
+  };
+  function currentAmbient(){
+    return (appSettings && appSettings.ambient_sound) || "none";
+  }
+  function markAmbientButtons(){
+    var cur = currentAmbient();
+    Array.prototype.forEach.call(document.querySelectorAll("#zen-sound-picker button"), function(b){
+      if (b.getAttribute("data-sound") === cur) b.classList.add("on");
+      else b.classList.remove("on");
+    });
+  }
+  function playAmbient(sound){
+    var a = $("ambient-audio");
+    if (!a) return;
+    if (!sound || sound === "none" || !AMBIENT_URLS[sound]){
+      try { a.pause(); } catch(e){}
+      markAmbientButtons();
+      return;
+    }
+    try {
+      if (a.getAttribute("src") !== AMBIENT_URLS[sound]) a.src = AMBIENT_URLS[sound];
+      a.volume = 0.3;
+      var p = a.play();
+      if (p && p.catch) p.catch(function(err){ console.warn("[oztudy] ambient audio failed:", err); });
+    } catch(err){ console.warn("[oztudy] ambient audio failed:", err); }
+    markAmbientButtons();
+  }
+  function stopAmbient(){
+    var a = $("ambient-audio");
+    if (a){ try { a.pause(); } catch(e){} }
+  }
+  function saveAmbient(sound){
+    fetch("/api/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ambient_sound: sound })
+    }).then(function(r){ return r.json(); }).then(function(d){
+      if (d.status === "success"){ appSettings = d.settings; markAmbientButtons(); }
+    }).catch(function(){});
   }
 
   function applyTheme(theme){
@@ -1706,6 +1890,7 @@
       appSettings = d.settings;
       applyTheme(appSettings.theme);
       applyTimerTheme(appSettings.timer_theme);
+      markAmbientButtons();
       fillSettingsForm(appSettings);
       applySettingsToWizard(appSettings);
     }).catch(function(){});
@@ -2039,6 +2224,7 @@
       appSettings = d.settings;
       applyTheme(appSettings.theme);
       applyTimerTheme(appSettings.timer_theme);
+      markAmbientButtons();
       fillSettingsForm(appSettings);
       applySettingsToWizard(appSettings);
       if (changed){ rebuildPlanWithSettings(); }
@@ -2075,7 +2261,25 @@
   });
   var _tabSet = $("tab-settings");
   if (_tabSet) _tabSet.addEventListener("click", function(){ switchTab("settings"); });
-  var _setClose = $("settings-close");
+  /* FEATURE 1 wiring: difficulty buttons + skip + backdrop dismiss (no save). */
+  Array.prototype.forEach.call(document.querySelectorAll("#feedback-overlay .feedback-btns button"), function(b){
+    b.addEventListener("click", function(){ sendFeedback(b.getAttribute("data-difficulty")); });
+  });
+  var _fbSkip = $("feedback-skip");
+  if (_fbSkip) _fbSkip.addEventListener("click", closeFeedbackModal);
+  var _fbOverlay = $("feedback-overlay");
+  if (_fbOverlay) _fbOverlay.addEventListener("click", function(e){ if (e.target === _fbOverlay) closeFeedbackModal(); });
+  /* FEATURE 3 wiring: ambient picker + load-failure warning (never crashes). */
+  Array.prototype.forEach.call(document.querySelectorAll("#zen-sound-picker button"), function(b){
+    b.addEventListener("click", function(){
+      var sound = b.getAttribute("data-sound") || "none";
+      playAmbient(sound);
+      saveAmbient(sound);
+    });
+  });
+  var _amb = $("ambient-audio");
+  if (_amb) _amb.addEventListener("error", function(){ console.warn("[oztudy] ambient audio failed to load"); });
+  markAmbientButtons();  var _setClose = $("settings-close");
   if (_setClose) _setClose.addEventListener("click", function(){ switchTab("wiz"); });
   var _setSave = $("settings-save");
   if (_setSave) _setSave.addEventListener("click", function(){ saveSettings(); });
@@ -2159,6 +2363,8 @@
       }
       if (payload.clear) renderPlan(null);
       else renderPlan(d.plan);
+      // FEATURE 1: status-toggled study block → ask difficulty when done.
+      if (payload && payload.status === "done") maybeFeedback(d.plan, payload.id);
     }).catch(function(){ setMsg("Bağlantı hatası.", "err"); });
   }
 

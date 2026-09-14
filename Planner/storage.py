@@ -89,10 +89,14 @@ DEFAULT_SETTINGS = {
     "duration_h": 2,
     "theme": "light",
     "timer_theme": "none",
+    "ambient_sound": "none",
 }
 
 
 TIMER_THEMES = ("none", "beach", "forest", "space")
+
+
+AMBIENT_SOUNDS = ("none", "rain", "lofi", "library", "whitenoise")
 
 
 _SCHEMA = """
@@ -108,9 +112,19 @@ CREATE TABLE IF NOT EXISTS history (
     minutes INTEGER NOT NULL DEFAULT 0,
     questions INTEGER NOT NULL DEFAULT 0,
     pages INTEGER NOT NULL DEFAULT 0,
-    ts INTEGER NOT NULL DEFAULT 0
+    ts INTEGER NOT NULL DEFAULT 0,
+    start_hour INTEGER NOT NULL DEFAULT -1
 );
 CREATE INDEX IF NOT EXISTS idx_history_day ON history(day);
+CREATE TABLE IF NOT EXISTS abandoned (
+    id INTEGER PRIMARY KEY,
+    day TEXT NOT NULL,
+    subject TEXT NOT NULL DEFAULT '',
+    topic TEXT NOT NULL DEFAULT '',
+    start_hour INTEGER NOT NULL DEFAULT -1,
+    ts INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_abandoned_day ON abandoned(day);
 CREATE TABLE IF NOT EXISTS game_days (
     day TEXT PRIMARY KEY
 );
@@ -200,10 +214,13 @@ CREATE INDEX IF NOT EXISTS idx_blocks_plan ON blocks(plan_id);
 """
 
 
+# Note: newer top-level keys not listed here (e.g. "topic_confidence")
+# persist automatically via the generic "extra:" kv fallback in
+# _write_tx/_read_doc, so no schema change is needed for plain JSON maps.
 _KNOWN_TOP = frozenset({
     "day", "settings", "exam_weeks", "habits", "habit_track", "history",
     "game", "weak", "tomorrow", "reviews", "scheduled", "missed", "plan",
-    "stats_reset_ts",
+    "stats_reset_ts", "abandoned",
 })
 
 
@@ -230,6 +247,18 @@ def _connect():
 
 def _init_db(conn):
     conn.executescript(_SCHEMA)
+    # Lightweight migrations for DBs created before a column/table existed.
+    # Each step is idempotent: redoing it is a harmless no-op.
+    try:
+        cols = [r["name"] for r in conn.execute("PRAGMA table_info(history)")]
+        if "start_hour" not in cols:
+            conn.execute("ALTER TABLE history ADD COLUMN start_hour INTEGER NOT NULL DEFAULT -1")
+            conn.commit()
+    except sqlite3.OperationalError as exc:
+        # A concurrent first-run may add the column between our check and
+        # the ALTER; only that race is safe to ignore.
+        if "duplicate column" not in str(exc).lower():
+            raise
 
 
 def _to_int(value, default=0):
@@ -333,12 +362,20 @@ def _read_doc(conn):
     hist = [{
         "day": r["day"], "subject": r["subject"], "topic": r["topic"],
         "minutes": r["minutes"], "questions": r["questions"],
-        "pages": r["pages"], "ts": r["ts"],
+        "pages": r["pages"], "ts": r["ts"], "start_hour": r["start_hour"],
     } for r in conn.execute(
-        "SELECT day, subject, topic, minutes, questions, pages, ts "
+        "SELECT day, subject, topic, minutes, questions, pages, ts, start_hour "
         "FROM history ORDER BY ts, id")]
     if hist:
         doc["history"] = hist
+    abandoned = [{
+        "day": r["day"], "subject": r["subject"], "topic": r["topic"],
+        "start_hour": r["start_hour"], "ts": r["ts"],
+    } for r in conn.execute(
+        "SELECT day, subject, topic, start_hour, ts "
+        "FROM abandoned ORDER BY ts, id")]
+    if abandoned:
+        doc["abandoned"] = abandoned
     weak = [{
         "subject": r["subject"], "topic": r["topic"], "added": r["added"],
     } for r in conn.execute("SELECT subject, topic, added FROM weak ORDER BY rowid")]
@@ -482,15 +519,41 @@ def _write_tx(conn, doc):
         for h in doc.get("history") or []:
             if not isinstance(h, dict):
                 continue
+            try:
+                start_hour = int(h.get("start_hour", -1))
+            except (TypeError, ValueError):
+                start_hour = -1
+            if not 0 <= start_hour <= 23:
+                start_hour = -1
             hist_rows.append((
                 str(h.get("day") or ""), str(h.get("subject") or ""),
                 str(h.get("topic") or ""), _to_int(h.get("minutes"), 0),
                 _to_int(h.get("questions"), 0), _to_int(h.get("pages"), 0),
-                _to_int(h.get("ts"), 0),
+                _to_int(h.get("ts"), 0), start_hour,
             ))
         cur.executemany(
-            "INSERT INTO history(day, subject, topic, minutes, questions, pages, ts)"
-            " VALUES(?, ?, ?, ?, ?, ?, ?)", hist_rows)
+            "INSERT INTO history(day, subject, topic, minutes, questions, pages, ts, start_hour)"
+            " VALUES(?, ?, ?, ?, ?, ?, ?, ?)", hist_rows)
+
+        cur.execute("DELETE FROM abandoned")
+        abandoned_rows = []
+        for a in doc.get("abandoned") or []:
+            if not isinstance(a, dict):
+                continue
+            try:
+                start_hour = int(a.get("start_hour", -1))
+            except (TypeError, ValueError):
+                start_hour = -1
+            if not 0 <= start_hour <= 23:
+                start_hour = -1
+            abandoned_rows.append((
+                str(a.get("day") or ""), str(a.get("subject") or ""),
+                str(a.get("topic") or ""), start_hour,
+                _to_int(a.get("ts"), 0),
+            ))
+        cur.executemany(
+            "INSERT INTO abandoned(day, subject, topic, start_hour, ts)"
+            " VALUES(?, ?, ?, ?, ?)", abandoned_rows)
 
         cur.execute("DELETE FROM habit_track")
         track_rows = []
@@ -645,6 +708,8 @@ def _settings_for(doc: dict) -> dict:
         st["theme"] = DEFAULT_SETTINGS["theme"]
     if str(st.get("timer_theme")) not in TIMER_THEMES:
         st["timer_theme"] = DEFAULT_SETTINGS["timer_theme"]
+    if str(st.get("ambient_sound")) not in AMBIENT_SOUNDS:
+        st["ambient_sound"] = DEFAULT_SETTINGS["ambient_sound"]
     return st
 
 
@@ -694,7 +759,7 @@ def query_history_range(day_from, day_to):
             _init_db(conn)
             _maybe_migrate(conn)
             rows = conn.execute(
-                "SELECT day, subject, topic, minutes, questions, pages, ts "
+                "SELECT day, subject, topic, minutes, questions, pages, ts, start_hour "
                 "FROM history WHERE day>=? AND day<=? ORDER BY ts, id",
                 (day_from, day_to)).fetchall()
         finally:

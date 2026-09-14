@@ -24,6 +24,7 @@ from scheduler import (
     _create_reviews,
     _find_block,
     _gather_overdue,
+    _log_abandoned,
     _log_history,
     _merge_scheduled,
     _resize_block,
@@ -31,6 +32,7 @@ from scheduler import (
     _tomorrow_add,
     _tomorrow_remove,
     _upsert_weak,
+    apply_block_feedback,
     build_plan,
     drawer,
 )
@@ -90,12 +92,13 @@ def get_settings():
 
 
 @app.post("/api/settings")
+@app.put("/api/settings")
 def save_settings():
     body = request.get_json(silent=True) or {}
     with LOCK:
         doc = _load_doc()
         saved = dict(doc.get("settings") or {})
-        for key in ("study_min", "break_min", "win_start", "win_end", "duration_h", "theme", "timer_theme"):
+        for key in ("study_min", "break_min", "win_start", "win_end", "duration_h", "theme", "timer_theme", "ambient_sound"):
             if key in body:
                 saved[key] = body[key]
         doc["settings"] = saved
@@ -362,6 +365,9 @@ def adjust():
                 )
             block["active"] = False
             block.pop("started_at", None)
+            # Stopped with progress but not completed → peak-performance data.
+            if block.get("type") == "study" and block.get("status") != "done":
+                _log_abandoned(doc, block)
         elif action == "reset":
             block["active"] = False
             block.pop("started_at", None)
@@ -469,6 +475,40 @@ def block_metrics():
     out = drawer(doc)
     out["status"] = "success"
     out["plan"] = plan
+    return jsonify(out)
+
+
+# === FEATURE 1: Dynamic Topic Confidence ===
+_FEEDBACK_TR = {"kolay": "easy", "orta": "medium", "zor": "hard"}
+
+
+@app.post("/api/blocks/<block_id>/feedback")
+def block_feedback(block_id):
+    """Record post-session difficulty and shift the topic's confidence."""
+    body = request.get_json(silent=True) or {}
+    difficulty = str(body.get("difficulty") or "").strip().lower()
+    difficulty = _FEEDBACK_TR.get(difficulty, difficulty)
+    if difficulty not in ("easy", "medium", "hard"):
+        return jsonify({"status": "error", "message": "Geçersiz zorluk (easy/medium/hard)."}), 400
+    with LOCK:
+        doc = _load_doc()
+        plan = doc.get("plan")
+        if not isinstance(plan, dict):
+            return jsonify({"status": "error", "message": "Blok bulunamadı."}), 404
+        block = _find_block(plan, block_id)
+        if not block or block.get("type") != "study":
+            return jsonify({"status": "error", "message": "Blok bulunamadı."}), 404
+        try:
+            new_conf = apply_block_feedback(doc, block, difficulty)
+        except (ValueError, LookupError) as exc:
+            return jsonify({"status": "error", "message": str(exc)}), 400
+        plan["stats"] = _stats(plan.get("blocks", []))
+        doc["plan"] = plan
+        _save_doc(doc)
+    out = drawer(doc)
+    out["status"] = "success"
+    out["plan"] = plan
+    out["confidence"] = new_conf
     return jsonify(out)
 
 
@@ -630,6 +670,122 @@ def stats_reset():
         doc["stats_reset_ts"] = now_ts
         _save_doc(doc)
     return jsonify({"status": "success"})
+
+
+# === FEATURE 2: Peak Performance Mapping ===
+def _peak_hourly(doc: dict) -> tuple[dict[int, int], dict[int, int]]:
+    """Return (completed, abandoned) session counts keyed by start hour."""
+    completed: dict[int, int] = {}
+    abandoned: dict[int, int] = {}
+    raw_hist = doc.get("history")
+    hist = raw_hist if isinstance(raw_hist, list) else []
+    for h in hist:
+        if not isinstance(h, dict):
+            continue
+        hour = _safe_int(h.get("start_hour"), -1)
+        if 0 <= hour <= 23:
+            completed[hour] = completed.get(hour, 0) + 1
+    raw_aban = doc.get("abandoned")
+    aban = raw_aban if isinstance(raw_aban, list) else []
+    for a in aban:
+        if not isinstance(a, dict):
+            continue
+        hour = _safe_int(a.get("start_hour"), -1)
+        if 0 <= hour <= 23:
+            abandoned[hour] = abandoned.get(hour, 0) + 1
+    return completed, abandoned
+
+
+@app.get("/api/insights/peak")
+def peak_insight():
+    """Return per-hour completion rates plus a Turkish insight sentence."""
+    with LOCK:
+        doc = _load_doc()
+    completed, abandoned = _peak_hourly(doc)
+    hours = sorted(set(completed) | set(abandoned))
+
+    def _rate(hour: int) -> int:
+        done = completed.get(hour, 0)
+        total = done + abandoned.get(hour, 0)
+        return round(done / total * 100) if total else 0
+
+    hourly_stats = [
+        {
+            "hour": h,
+            "completed": completed.get(h, 0),
+            "abandoned": abandoned.get(h, 0),
+            "rate": _rate(h),
+        }
+        for h in hours
+    ]
+    total = sum(completed.values()) + sum(abandoned.values())
+    if total < 3:
+        return jsonify({
+            "status": "success",
+            "best_hours": [],
+            "worst_hours": [],
+            "insight": "Henüz yeterli veri yok. Birkaç gün daha çalış!",
+            "hourly_stats": hourly_stats,
+        })
+    best_hours = sorted(h for h in hours if _rate(h) > 70)
+    worst_hours = sorted(h for h in hours if _rate(h) < 40)
+    if best_hours and worst_hours:
+        bh, wh = best_hours[0], worst_hours[0]
+        insight = (
+            f"{bh:02d}:00 civarında blokların %{_rate(bh)}'ini tamamlıyorsun "
+            f"ama {wh:02d}:00 civarında %{_rate(wh)}. "
+            "Ağır konuları verimli saatlerine al."
+        )
+    elif best_hours:
+        bh = best_hours[0]
+        insight = (
+            f"En verimli saatin {bh:02d}:00 civarı (%{_rate(bh)} tamamlama). "
+            "Ağır konuları bu saatlere koy."
+        )
+    elif worst_hours:
+        wh = worst_hours[0]
+        insight = (
+            f"{wh:02d}:00 civarında tamamlama oranın %{_rate(wh)}. "
+            "Bu saatlere hafif tekrarlar koy."
+        )
+    else:
+        insight = "Tüm saatlerde benzer performans gösteriyorsun. Düzenli devam et!"
+    return jsonify({
+        "status": "success",
+        "best_hours": best_hours,
+        "worst_hours": worst_hours,
+        "insight": insight,
+        "hourly_stats": hourly_stats,
+    })
+
+
+# === FEATURE 4: Study Heatmap ===
+@app.get("/api/stats/heatmap")
+def heatmap():
+    """Return per-day study minutes for the last 84 days (12 weeks)."""
+    with LOCK:
+        doc = _load_doc()
+    raw_hist = doc.get("history")
+    hist = raw_hist if isinstance(raw_hist, list) else []
+    today = datetime.now().date()
+    start = today - timedelta(days=83)
+    start_key, today_key = start.isoformat(), today.isoformat()
+    per_day: dict[str, int] = {}
+    for h in hist:
+        if not isinstance(h, dict):
+            continue
+        day = h.get("day")
+        if not _valid_day(day) or not (start_key <= str(day) <= today_key):
+            continue
+        per_day[str(day)] = per_day.get(str(day), 0) + _safe_int(h.get("minutes", 0))
+    data = [
+        {
+            "day": (start + timedelta(days=i)).isoformat(),
+            "minutes": per_day.get((start + timedelta(days=i)).isoformat(), 0),
+        }
+        for i in range(84)
+    ]
+    return jsonify({"status": "success", "weeks": 12, "data": data})
 
 
 _TR_MONTHS_SHORT = ["Oca", "Şub", "Mar", "Nis", "May", "Haz",

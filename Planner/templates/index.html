@@ -445,6 +445,21 @@
             <div class="day-grid" id="st-day-bars"></div>
           </div>
         </div>
+        <!-- FEATURE 2: Peak Performance Mapping -->
+        <div>
+          <div class="chart-title">Ne Zaman Verimlisin? <span class="t">saatlik tamamlama oranı</span></div>
+          <div id="peak-chart" class="peak-chart"><div class="empty" style="padding:8px 2px;font-size:12px">Yükleniyor…</div></div>
+          <div id="peak-insight" class="peak-insight" hidden></div>
+        </div>
+        <!-- FEATURE 4: Study Heatmap -->
+        <div>
+          <div class="chart-title">Çalışma Isı Haritası <span class="t">son 12 hafta · dk/gün</span></div>
+          <div class="heatmap-wrap">
+            <div class="heatmap-days"><span>Pzt</span><span>Sal</span><span>Çar</span><span>Per</span><span>Cum</span><span>Cmt</span><span>Paz</span></div>
+            <div id="heatmap-grid" class="heatmap-grid"></div>
+          </div>
+          <div class="heatmap-legend"><span>Az</span><i class="hm hm-0"></i><i class="hm hm-1"></i><i class="hm hm-2"></i><i class="hm hm-3"></i><i class="hm hm-4"></i><span>Çok</span></div>
+        </div>
       </div>
 
       <!-- Report panel (hidden by default) -->
@@ -587,6 +602,9 @@
   </div>
 </div>
 
+<!-- FEATURE 3: hidden ambient audio for Zen Mode (If URLs fail, download free sounds from pixabay.com/audio and place in /static/sounds/) -->
+<audio id="ambient-audio" loop preload="auto" hidden></audio>
+
 <!-- Zen mode -->
 <div class="zen-overlay" id="zen-overlay" hidden>
   <div class="zen-inner">
@@ -602,6 +620,14 @@
     <div class="zen-actions">
       <button type="button" class="zen-pause" id="zen-pause"><svg class="ic"><use href="#i-pause"/></svg>Durdur · Ara Ver</button>
       <button type="button" class="zen-abandon" id="zen-abandon">Seansı Sonlandır</button>
+    </div>
+    <!-- FEATURE 3: ambient focus sounds -->
+    <div class="zen-sound-picker" id="zen-sound-picker">
+      <button type="button" data-sound="none" title="Sessiz">🔇</button>
+      <button type="button" data-sound="rain" title="Yağmur">🌧️</button>
+      <button type="button" data-sound="lofi" title="Lofi">🎵</button>
+      <button type="button" data-sound="library" title="Kütüphane">📚</button>
+      <button type="button" data-sound="whitenoise" title="Beyaz Gürültü">〰️</button>
     </div>
   </div>
 </div>
@@ -626,6 +652,21 @@
     <button type="button" class="zen-btn-ok" id="zen-btn-ok">Harika!</button>
   </div>
 </div>
+
+<!-- FEATURE 1: post-session difficulty feedback -->
+<div class="overlay" id="feedback-overlay">
+  <div class="modal feedback-modal">
+    <h3>Bu nasıldı?</h3>
+    <div class="m-sub">Zorluğunu işaretle, programını ona göre ayarlayayım.</div>
+    <div class="feedback-btns">
+      <button type="button" data-difficulty="hard">😰<span>Zor</span></button>
+      <button type="button" data-difficulty="medium">😐<span>Orta</span></button>
+      <button type="button" data-difficulty="easy">😊<span>Kolay</span></button>
+    </div>
+    <button type="button" class="m-close" id="feedback-skip">Atla</button>
+  </div>
+</div>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
 
 <!-- Catch-up modal -->
 <div class="overlay" id="overlay">

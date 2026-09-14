@@ -106,18 +106,21 @@ Base URL `http://127.0.0.1:5000`. All responses are JSON with
 | POST | `/api/plan` | `{topics:[{subject,topic,confidence}], start, end, duration_h, mode, criterion}` | `{plan, weak, tomorrow}` |
 | GET | `/api/school` | — | `{school: digest}` |
 | GET | `/api/settings` | — | `{settings}` |
-| POST | `/api/settings` | `{study_min, break_min, win_start, win_end, duration_h, theme}` (partial ok) | `{settings}` (clamped) |
+| POST/PUT | `/api/settings` | `{study_min, break_min, win_start, win_end, duration_h, theme, timer_theme, ambient_sound}` (partial ok) | `{settings}` (clamped/validated) |
 | GET | `/api/exams` | — | `{exams, next:{label,start,end,days_until,ongoing}}` |
 | POST | `/api/exams` | `{exams:[{id,label,start,end}]}` dates `YYYY-MM-DD`, `start <= end` | `{exams, next}` or 400 |
 | GET | `/api/habits` | — | `{habits, track, days, today, streaks}` |
 | POST | `/api/habits/toggle` | `{id, date: YYYY-MM-DD}` | `{track, today, streaks}` |
 | POST | `/api/habits/save` | `{habits:[{label, time: HH:MM}]}` | `{habits, track, days, today, streaks}` or 400 |
 | POST | `/api/blocks` | `{id, status: done\|pending}` or `{clear:true}` | `{plan}` |
+| POST | `/api/blocks/<id>/feedback` | `{difficulty: easy\|medium\|hard}` (TR aliases accepted) | `{plan, confidence}` or 400/404 |
 | POST | `/api/blocks/adjust` | `{action: start\|stop\|reset\|extend\|done\|push\|restore\|shift, id?, delta?, offset?}` | `{plan, ...}` |
 | POST | `/api/blocks/metrics` | `{id, questions?, pages?}` | `{plan}` |
 | GET | `/api/stats` | — | `{today, week, subjects, days}` |
 | POST | `/api/stats/reset` | — | `{status}` |
 | GET | `/api/report?range=week\|month\|all` | query `range` | `{range, totals, days, subjects, topics, highlights}` |
+| GET | `/api/insights/peak` | — | `{best_hours, worst_hours, insight, hourly_stats}` |
+| GET | `/api/stats/heatmap` | — | `{weeks: 12, data: [{day, minutes}]×84}` |
 | GET | `/api/game` | — | `{xp, level, xp_next, base_modules, base_health, badges, streak}` |
 | GET | `/api/drawer` | — | `{weak, tomorrow}` |
 | GET/POST | `/api/weak` | `{subject, topic, remove?}` | `{weak}` |

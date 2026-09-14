@@ -25,6 +25,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import scheduler
 from gamification import _compute_streak, _habit_streak
+from scheduler import (
+    _apply_feedback_step,
+    _block_start_hour,
+    _log_abandoned,
+    apply_block_feedback,
+)
 from school import _next_exam
 from storage import _repair_plan, _settings_for
 from utils import (
@@ -489,6 +495,294 @@ class TimerThemeApiTests(unittest.TestCase):
             "/api/settings", json={"timer_theme": "volcano"}
         ).get_json()
         self.assertEqual(body["settings"]["timer_theme"], "none")
+
+
+def _isolated_client(testcase):
+    """Point storage+app at a temp dir; return (client, storage_mod)."""
+    import importlib
+
+    import storage as storage_mod
+
+    importlib.reload(storage_mod)
+    import app as app_mod
+
+    importlib.reload(app_mod)
+    app_mod.app.config.update(TESTING=True)
+    return app_mod.app.test_client(), storage_mod
+
+
+def _seed_plan(storage_mod, blocks):
+    with storage_mod.LOCK:
+        doc = storage_mod._load_doc()
+        doc["plan"] = {
+            "id": "p1", "day": "2026-09-14", "created": "10:00",
+            "created_at": 1,
+            "input": {"topics": [], "start": "17:00", "end": "19:00",
+                       "duration_h": 2, "mode": "practice", "criterion": "A"},
+            "blocks": blocks, "meta": {}, "stats": {},
+        }
+        storage_mod._save_doc(doc)
+
+
+def _study_block(bid="b1", conf="yellow", **kw):
+    blk = {
+        "id": bid, "start": 1020, "end": 1065, "time": "17:00-17:45",
+        "duration": 45, "origDuration": 45, "type": "study",
+        "subject": "Math", "topic": "Algebra", "confidence": conf,
+        "status": "pending", "active": False, "elapsed": 0, "note": "",
+    }
+    blk.update(kw)
+    return blk
+
+
+class FeedbackTransitionTests(unittest.TestCase):
+    def test_all_transitions(self):
+        self.assertEqual(_apply_feedback_step("yellow", "easy"), "green")
+        self.assertEqual(_apply_feedback_step("red", "easy"), "yellow")
+        self.assertEqual(_apply_feedback_step("green", "easy"), "green")
+        self.assertEqual(_apply_feedback_step("green", "hard"), "yellow")
+        self.assertEqual(_apply_feedback_step("yellow", "hard"), "red")
+        self.assertEqual(_apply_feedback_step("red", "hard"), "red")
+        self.assertEqual(_apply_feedback_step("yellow", "medium"), "yellow")
+        self.assertEqual(_apply_feedback_step("red", "medium"), "red")
+
+    def test_block_and_topic_map(self):
+        doc: dict = {}
+        blk = _study_block(conf="yellow")
+        self.assertEqual(apply_block_feedback(doc, blk, "hard"), "red")
+        self.assertEqual(blk["confidence"], "red")
+        self.assertEqual(blk["last_feedback"], "hard")
+        self.assertEqual(doc["topic_confidence"], {"Math|Algebra": "red"})
+
+    def test_rejects_bad_input(self):
+        with self.assertRaises(ValueError):
+            apply_block_feedback({}, _study_block(), "extreme")
+        with self.assertRaises(LookupError):
+            apply_block_feedback({}, {"type": "break"}, "easy")
+
+    def test_start_hour(self):
+        self.assertEqual(_block_start_hour({"start": 1020}), 17)
+        self.assertEqual(_block_start_hour({}), -1)
+        self.assertEqual(_block_start_hour({"start": "bad"}), -1)
+
+    def test_log_abandoned_guards(self):
+        self.assertIsNone(_log_abandoned({}, _study_block(elapsed=0)))
+        self.assertIsNone(_log_abandoned({}, _study_block(elapsed=5, status="done")))
+        entry = _log_abandoned({}, _study_block(elapsed=120))
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry["start_hour"], 17)
+
+
+class FeedbackApiTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        import os as _os
+
+        _os.environ["OZTUDY_DATA_DIR"] = self.tmp.name
+        self.client, self.storage_mod = _isolated_client(self)
+        _seed_plan(self.storage_mod, [_study_block(), _study_block("b2", "green")])
+
+    def tearDown(self):
+        import os as _os
+        import importlib
+
+        self.tmp.cleanup()
+        _os.environ.pop("OZTUDY_DATA_DIR", None)
+        import storage as storage_mod
+
+        importlib.reload(storage_mod)
+        import app as app_mod  # noqa: F401
+
+        importlib.reload(app_mod)
+
+    def test_feedback_shifts_confidence(self):
+        resp = self.client.post("/api/blocks/b1/feedback", json={"difficulty": "hard"})
+        self.assertEqual(resp.status_code, 200)
+        body = resp.get_json()
+        self.assertEqual(body["confidence"], "red")
+        blk = next(b for b in body["plan"]["blocks"] if b["id"] == "b1")
+        self.assertEqual(blk["last_feedback"], "hard")
+
+    def test_feedback_persists_to_topic_map(self):
+        self.client.post("/api/blocks/b1/feedback", json={"difficulty": "easy"})
+        with self.storage_mod.LOCK:
+            doc = self.storage_mod._load_doc()
+        self.assertEqual(doc.get("topic_confidence", {}).get("Math|Algebra"), "green")
+
+    def test_feedback_rejects_bad_difficulty(self):
+        resp = self.client.post("/api/blocks/b1/feedback", json={"difficulty": "extreme"})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_feedback_404_unknown_or_break(self):
+        self.assertEqual(
+            self.client.post("/api/blocks/nope/feedback", json={"difficulty": "easy"}).status_code, 404
+        )
+        with self.storage_mod.LOCK:
+            doc = self.storage_mod._load_doc()
+            doc["plan"]["blocks"].append({
+                "id": "br1", "start": 1065, "end": 1075, "time": "17:45-17:55",
+                "duration": 10, "origDuration": 10, "type": "break",
+                "subject": "", "topic": "Mola", "confidence": "yellow",
+                "status": "pending", "active": False, "elapsed": 0, "note": "",
+            })
+            self.storage_mod._save_doc(doc)
+        self.assertEqual(
+            self.client.post("/api/blocks/br1/feedback", json={"difficulty": "easy"}).status_code, 404
+        )
+
+
+class PeakApiTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        import os as _os
+
+        _os.environ["OZTUDY_DATA_DIR"] = self.tmp.name
+        self.client, self.storage_mod = _isolated_client(self)
+
+    def tearDown(self):
+        import os as _os
+        import importlib
+
+        self.tmp.cleanup()
+        _os.environ.pop("OZTUDY_DATA_DIR", None)
+        import storage as storage_mod
+
+        importlib.reload(storage_mod)
+        import app as app_mod  # noqa: F401
+
+        importlib.reload(app_mod)
+
+    def test_empty_returns_no_data_message(self):
+        body = self.client.get("/api/insights/peak").get_json()
+        self.assertEqual(body["status"], "success")
+        self.assertEqual(body["best_hours"], [])
+        self.assertEqual(body["worst_hours"], [])
+        self.assertIn("yeterli veri yok", body["insight"])
+
+    def test_computed_rates(self):
+        with self.storage_mod.LOCK:
+            doc = self.storage_mod._load_doc()
+            doc["history"] = [
+                {"day": "2026-09-10", "subject": "M", "topic": "T",
+                 "minutes": 45, "questions": 0, "pages": 0, "ts": 1, "start_hour": 16},
+                {"day": "2026-09-11", "subject": "M", "topic": "T",
+                 "minutes": 45, "questions": 0, "pages": 0, "ts": 2, "start_hour": 16},
+                {"day": "2026-09-12", "subject": "M", "topic": "T",
+                 "minutes": 45, "questions": 0, "pages": 0, "ts": 3, "start_hour": 21},
+            ]
+            doc["abandoned"] = [
+                {"day": "2026-09-12", "subject": "M", "topic": "T", "start_hour": 21, "ts": 4},
+                {"day": "2026-09-13", "subject": "M", "topic": "T", "start_hour": 21, "ts": 5},
+            ]
+            self.storage_mod._save_doc(doc)
+        body = self.client.get("/api/insights/peak").get_json()
+        by_hour = {s["hour"]: s for s in body["hourly_stats"]}
+        self.assertEqual(by_hour[16]["rate"], 100)
+        self.assertEqual(by_hour[21]["rate"], 33)
+        self.assertIn(16, body["best_hours"])
+        self.assertIn(21, body["worst_hours"])
+
+    def test_stop_logs_abandoned(self):
+        import time as _time
+
+        _seed_plan(self.storage_mod, [_study_block(
+            status="pending", active=True,
+            started_at=int(_time.time()) - 600, elapsed=0)])
+        resp = self.client.post("/api/blocks/adjust", json={"action": "stop", "id": "b1"})
+        self.assertEqual(resp.status_code, 200)
+        with self.storage_mod.LOCK:
+            doc = self.storage_mod._load_doc()
+        self.assertEqual(len(doc.get("abandoned", [])), 1)
+        self.assertEqual(doc["abandoned"][0]["start_hour"], 17)
+
+
+class HeatmapApiTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        import os as _os
+
+        _os.environ["OZTUDY_DATA_DIR"] = self.tmp.name
+        self.client, self.storage_mod = _isolated_client(self)
+
+    def tearDown(self):
+        import os as _os
+        import importlib
+
+        self.tmp.cleanup()
+        _os.environ.pop("OZTUDY_DATA_DIR", None)
+        import storage as storage_mod
+
+        importlib.reload(storage_mod)
+        import app as app_mod  # noqa: F401
+
+        importlib.reload(app_mod)
+
+    def test_empty_history_all_zeros(self):
+        body = self.client.get("/api/stats/heatmap").get_json()
+        self.assertEqual(body["status"], "success")
+        self.assertEqual(body["weeks"], 12)
+        self.assertEqual(len(body["data"]), 84)
+        self.assertTrue(all(d["minutes"] == 0 for d in body["data"]))
+        self.assertEqual(body["data"][-1]["day"], date.today().isoformat())
+
+    def test_sums_minutes_per_day(self):
+        from datetime import timedelta as _td
+
+        today = date.today().isoformat()
+        yesterday = (date.today() - _td(days=1)).isoformat()
+        with self.storage_mod.LOCK:
+            doc = self.storage_mod._load_doc()
+            doc["history"] = [
+                {"day": today, "subject": "M", "topic": "A",
+                 "minutes": 45, "questions": 0, "pages": 0, "ts": 1},
+                {"day": today, "subject": "M", "topic": "B",
+                 "minutes": 30, "questions": 0, "pages": 0, "ts": 2},
+                {"day": yesterday, "subject": "M", "topic": "A",
+                 "minutes": 20, "questions": 0, "pages": 0, "ts": 3},
+            ]
+            self.storage_mod._save_doc(doc)
+        body = self.client.get("/api/stats/heatmap").get_json()
+        by_day = {d["day"]: d["minutes"] for d in body["data"]}
+        self.assertEqual(by_day[today], 75)
+        self.assertEqual(by_day[yesterday], 20)
+
+
+class AmbientSettingsTests(unittest.TestCase):
+    def test_default_and_validation(self):
+        self.assertEqual(_settings_for({})["ambient_sound"], "none")
+        self.assertEqual(
+            _settings_for({"settings": {"ambient_sound": "rain"}})["ambient_sound"], "rain"
+        )
+        self.assertEqual(
+            _settings_for({"settings": {"ambient_sound": "ocean"}})["ambient_sound"], "none"
+        )
+
+    def test_save_via_post_and_put(self):
+        tmp = tempfile.TemporaryDirectory()
+        import os as _os
+
+        _os.environ["OZTUDY_DATA_DIR"] = tmp.name
+        try:
+            client, _ = _isolated_client(self)
+            self.assertEqual(
+                client.post("/api/settings", json={"ambient_sound": "lofi"}).get_json()["settings"]["ambient_sound"],
+                "lofi",
+            )
+            self.assertEqual(
+                client.put("/api/settings", json={"ambient_sound": "rain"}).get_json()["settings"]["ambient_sound"],
+                "rain",
+            )
+        finally:
+            import importlib
+
+            tmp.cleanup()
+            _os.environ.pop("OZTUDY_DATA_DIR", None)
+            import storage as storage_mod
+
+            importlib.reload(storage_mod)
+            import app as app_mod  # noqa: F401
+
+            importlib.reload(app_mod)
 
 
 if __name__ == "__main__":

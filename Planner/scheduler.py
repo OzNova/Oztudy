@@ -23,6 +23,54 @@ CONFIDENCES = ("red", "yellow", "green")
 CONF_RANK = {"red": 0, "yellow": 1, "green": 2}
 
 
+# === FEATURE 1: Dynamic Topic Confidence ===
+# One-step confidence transitions driven by post-session difficulty feedback.
+FEEDBACK_LEVELS = ("easy", "medium", "hard")
+
+_FEEDBACK_STEP = {
+    "easy": {"red": "yellow", "yellow": "green", "green": "green"},
+    "medium": {"red": "red", "yellow": "yellow", "green": "green"},
+    "hard": {"red": "red", "yellow": "red", "green": "yellow"},
+}
+
+
+def _topic_key(subject: str, topic: str) -> str:
+    """Stable map key for per-topic confidence (``"subject|topic"``)."""
+    return f"{str(subject or '').strip()}|{str(topic or '').strip()}"
+
+
+def _apply_feedback_step(confidence: str, difficulty: str) -> str:
+    """Return the confidence after one feedback step (never raises)."""
+    table = _FEEDBACK_STEP.get(difficulty)
+    if table is None:
+        return confidence if confidence in CONFIDENCES else "yellow"
+    return table.get(confidence, "yellow")
+
+
+def apply_block_feedback(doc: dict, block: dict, difficulty: str) -> str:
+    """Apply difficulty feedback to a study block and persist it.
+
+    Updates ``block["confidence"]`` one step, stamps
+    ``block["last_feedback"]``, and records the result in
+    ``doc["topic_confidence"]`` so future plans pick it up. Returns the
+    new confidence. Raises ``ValueError`` on bad difficulty and
+    ``LookupError`` when the block is not a study block.
+    """
+    if difficulty not in FEEDBACK_LEVELS:
+        raise ValueError(f"Geçersiz zorluk: {difficulty!r}.")
+    if not isinstance(block, dict) or block.get("type") != "study":
+        raise LookupError("Geri bildirim yalnızca çalışma blokları için.")
+    new_conf = _apply_feedback_step(block.get("confidence", "yellow"), difficulty)
+    block["confidence"] = new_conf
+    block["last_feedback"] = difficulty
+    subj, topic = block.get("subject") or "", block.get("topic") or ""
+    if subj and topic:
+        tmap = doc.setdefault("topic_confidence", {})
+        if isinstance(tmap, dict):
+            tmap[_topic_key(subj, topic)] = new_conf
+    return new_conf
+
+
 CONF_TAGS = {
     "red": "Zorlanıyorum / Deep Focus",
     "yellow": "Orta / Practice",
@@ -154,6 +202,54 @@ def _create_reviews(doc, block):
         })
 
 
+def _block_start_hour(block: dict) -> int:
+    """Return the block's start hour (0-23), or -1 when unknown.
+
+    Never raises; corrupt ``start`` values yield -1 so analytics can skip
+    the entry instead of crashing.
+    """
+    try:
+        if block.get("start") is None:
+            return -1
+        hour = int(block.get("start") or 0) // 60
+        return hour if 0 <= hour <= 23 else -1
+    except (TypeError, ValueError):
+        return -1
+
+
+def _log_abandoned(doc: dict, block: dict) -> dict | None:
+    """Record a stopped-without-completion study block for peak mapping.
+
+    Returns the entry, or ``None`` when the block has no trackable progress
+    (not a study block, already done, or ``elapsed`` <= 0).
+    """
+    if not isinstance(block, dict) or block.get("type") != "study":
+        return None
+    if block.get("status") == "done":
+        return None
+    try:
+        elapsed = int(block.get("elapsed") or 0)
+    except (TypeError, ValueError):
+        elapsed = 0
+    if elapsed <= 0:
+        return None
+    now_ts = int(time.time())
+    entry = {
+        "day": _day_key(now_ts),
+        "subject": block.get("subject") or "Genel",
+        "topic": block.get("topic") or "",
+        "start_hour": _block_start_hour(block),
+        "ts": now_ts,
+    }
+    abandoned = doc.setdefault("abandoned", [])
+    if isinstance(abandoned, list):
+        abandoned.append(entry)
+        if len(abandoned) > 500:
+            del abandoned[: len(abandoned) - 500]
+        return entry
+    return None
+
+
 def _log_history(doc, block):
     now_ts = int(time.time())
     block["done_ts"] = now_ts
@@ -163,6 +259,7 @@ def _log_history(doc, block):
     minutes = max(1, int(block.get("duration") or (block.get("end", 0) - block.get("start", 0)) or 1))
     q = max(0, int(block.get("questions") or 0))
     p = max(0, int(block.get("pages") or 0))
+    start_hour = _block_start_hour(block)
     already_awarded = bool(block.get("xp_awarded"))
     if not already_awarded:
         block["xp_awarded"] = True
@@ -170,6 +267,7 @@ def _log_history(doc, block):
     for h in hist:
         if h.get("day") == day and h.get("subject") == subj and h.get("topic") == topic:
             h["minutes"] = minutes
+            h["start_hour"] = start_hour
             if q or p:
                 h["questions"] = q
                 h["pages"] = p
@@ -184,6 +282,7 @@ def _log_history(doc, block):
     hist.append({
         "day": day, "subject": subj, "topic": topic,
         "minutes": minutes, "questions": q, "pages": p, "ts": now_ts,
+        "start_hour": start_hour,
     })
     if already_awarded:
         return
@@ -250,6 +349,8 @@ def _gather_overdue(doc: dict) -> list[dict]:
             except (TypeError, ValueError):
                 continue
             push(b.get("subject"), b.get("topic"), b.get("duration", 30), today, "plan", b.get("confidence", "yellow"))
+    # FEATURE 1: hardest topics first so reds get scheduled before greens.
+    items.sort(key=lambda it: CONF_RANK.get(it.get("confidence", "yellow"), 1))
     return items
 
 
@@ -360,7 +461,8 @@ def build_plan(
     if e - s < MIN_PLAN_WINDOW_MIN:
         return None, f"Zaman penceresi en az {MIN_PLAN_WINDOW_MIN} dakika olmalı."
 
-    st = _settings_for(_load_doc())
+    stored_doc = _load_doc()
+    st = _settings_for(stored_doc)
     study_min = st["study_min"]
     break_min = st["break_min"]
 
@@ -398,16 +500,26 @@ def build_plan(
     duration_h = max(1, int(duration_h or 0))
 
     items = []
+    # FEATURE 1: persisted feedback wins over the user-picked confidence so
+    # a topic marked hard last time is scheduled as hard again.
+    saved_conf = stored_doc.get("topic_confidence")
+    saved_conf = saved_conf if isinstance(saved_conf, dict) else {}
     for t in topics:
         conf = str(t.get("confidence") or "yellow")
         if conf not in CONFIDENCES:
             conf = "yellow"
+        remembered = saved_conf.get(_topic_key(t.get("subject"), t.get("topic")))
+        if remembered in CONFIDENCES:
+            conf = remembered
         items.append({"subject": str(t.get("subject")), "topic": str(t.get("topic")), "confidence": conf})
+    # Schedule hardest topics first (red → yellow → green).
+    items.sort(key=lambda it: CONF_RANK.get(it.get("confidence", "yellow"), 1))
 
-    # Every selected topic is scheduled in the order the user picked them, as
-    # a study_min block separated by break_min breaks (both from settings).
-    # Nothing is capped, dropped, hidden or limited by the focus window: if the
-    # total duration exceeds the window, the master timeline extends past it.
+    # Topics are scheduled hardest-first (red → yellow → green, stable for
+    # ties) as study_min blocks separated by break_min breaks (both from
+    # settings). Nothing is capped, dropped, hidden or limited by the focus
+    # window: if the total duration exceeds the window, the master timeline
+    # extends past it.
     blocks = []
     cursor = s
     for it in items:
